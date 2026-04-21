@@ -1,3 +1,6 @@
+require "ruby_llm"
+require "neighbor"
+
 require "curator/version"
 require "curator/errors"
 require "curator/configuration"

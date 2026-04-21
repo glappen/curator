@@ -1,0 +1,35 @@
+class CreateCuratorSearches < ActiveRecord::Migration[7.0]
+  def change
+    create_table :curator_searches do |t|
+      t.references :knowledge_base,
+                   null: false,
+                   foreign_key: { to_table: :curator_knowledge_bases, on_delete: :cascade },
+                   index: { name: "index_curator_searches_on_knowledge_base_id" }
+
+      t.bigint :chat_id
+      t.bigint :message_id
+
+      t.text   :query, null: false
+
+      # Snapshot-at-query-time. Nullable to tolerate :failed rows captured
+      # before the LLM call runs.
+      t.string  :chat_model
+      t.string  :embedding_model
+      t.text    :system_prompt_text
+      t.string  :system_prompt_hash
+      t.string  :retrieval_strategy
+      t.decimal :similarity_threshold, precision: 4, scale: 3
+      t.integer :chunk_limit
+
+      t.integer :total_duration_ms
+      t.string  :status,        null: false, default: "success"
+      t.text    :error_message
+
+      t.datetime :created_at, null: false
+    end
+
+    add_index :curator_searches, :chat_id
+    add_index :curator_searches, :message_id
+    add_index :curator_searches, :created_at
+  end
+end

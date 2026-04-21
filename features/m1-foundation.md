@@ -16,6 +16,12 @@ configuration, and auth plumbing that every later milestone builds on.
       `spec/rails_helper.rb` (commit `0a531a2`).
 - [x] Phase 0 — error hierarchy + `Curator::Configuration` + `Curator.configure`
       entry points. 22 specs green, rubocop clean.
+- [x] Phase 1 — `Curator::ApplicationRecord` abstract base + 9 migration
+      templates under `lib/generators/curator/install/templates/`. Template
+      rendering spec (43 examples) asserts each template produces valid Ruby
+      with required schema fragments. Actual `db:migrate` against `spec/dummy`
+      deferred until Postgres + pgvector are running — will land in Phase 5
+      end-to-end validation.
 
 ## Files Under Development
 
@@ -77,36 +83,7 @@ spec/
 
 ## Current Work
 
-- [-] Phase 1 — Base model + migration templates
-   - `Curator::ApplicationRecord` abstract class (`self.abstract_class = true`).
-   - Migration templates under `lib/generators/curator/install/templates/`:
-     - `enable_vector.rb.tt` — `enable_extension "vector"` (idempotent via
-       `CREATE EXTENSION IF NOT EXISTS` under the hood).
-     - `create_curator_knowledge_bases.rb.tt` — all config columns from the
-       schema in `features/implementation.md`. Unique index on `slug`.
-       Partial unique index on `is_default` where true.
-     - `create_curator_documents.rb.tt` — `status` string (no Rails enum yet;
-       the model defines `enum status: { ... }`). `metadata` jsonb default `{}`.
-       Index on `content_hash`.
-     - `create_curator_chunks.rb.tt` — uses `t.virtual :content_tsvector, type: :tsvector, as: "to_tsvector('english'::regconfig, content)", stored: true`
-       OR a raw SQL `execute` with `GENERATED ALWAYS AS (...) STORED`. Config
-       is hardcoded `english` at the column level; per-KB `tsvector_config`
-       is applied at **query** time via explicit `to_tsvector(config, content)`
-       rather than at storage time (revisit if per-KB indexes prove needed).
-       GIN index on `content_tsvector`.
-     - `create_curator_embeddings.rb.tt` — `vector(<%= embedding_dim %>)`
-       column, HNSW index via raw SQL.
-     - `create_curator_searches.rb.tt` — all snapshot columns (chat_model,
-       embedding_model, system_prompt_text/hash, retrieval_strategy,
-       similarity_threshold, chunk_limit). Non-null on success rows; nullable
-       to allow `:failed` rows with no snapshot to exist.
-     - `create_curator_search_steps.rb.tt` — minimal schema per spec.
-     - `create_curator_evaluations.rb.tt` — `failure_categories` with
-       `array: true, default: []`. GIN index on `failure_categories`.
-     - `add_curator_scope_to_chats.rb.tt` — `add_column :chats, :curator_scope, :string`.
-   - **Validate**: Phase 1 checklist below.
-
-- [ ] Phase 2 — Concrete model classes
+- [-] Phase 2 — Concrete model classes
    - `Curator::KnowledgeBase`
      - `has_many :documents, dependent: :destroy`
      - `has_many :searches, dependent: :destroy`

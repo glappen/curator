@@ -1,0 +1,30 @@
+class CreateCuratorKnowledgeBases < ActiveRecord::Migration[7.0]
+  def change
+    create_table :curator_knowledge_bases do |t|
+      t.string   :name,                 null: false
+      t.string   :slug,                 null: false
+      t.text     :description
+      t.boolean  :is_default,           null: false, default: false
+
+      t.string   :embedding_model,      null: false
+      t.string   :chat_model,           null: false
+
+      t.integer  :chunk_size,           null: false, default: 512
+      t.integer  :chunk_overlap,        null: false, default: 50
+      t.decimal  :similarity_threshold, null: false, default: 0.7, precision: 4, scale: 3
+      t.string   :retrieval_strategy,   null: false, default: "hybrid"
+      t.string   :tsvector_config,      null: false, default: "english"
+      t.boolean  :strict_grounding,     null: false, default: true
+      t.boolean  :include_citations,    null: false, default: true
+      t.text     :system_prompt
+
+      t.timestamps
+    end
+
+    add_index :curator_knowledge_bases, :slug, unique: true
+    add_index :curator_knowledge_bases, :is_default,
+              unique: true,
+              where: "is_default = true",
+              name:  "index_curator_kb_on_single_default"
+  end
+end

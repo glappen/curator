@@ -1,0 +1,28 @@
+class CreateCuratorChunks < ActiveRecord::Migration[7.0]
+  def change
+    create_table :curator_chunks do |t|
+      t.references :document,
+                   null: false,
+                   foreign_key: { to_table: :curator_documents, on_delete: :cascade },
+                   index: { name: "index_curator_chunks_on_document_id" }
+
+      t.integer :sequence,    null: false
+      t.text    :content,     null: false
+      t.integer :token_count, null: false
+      t.integer :page_number
+      t.integer :char_start,  null: false
+      t.integer :char_end,    null: false
+      t.string  :status,      null: false, default: "pending"
+
+      t.virtual :content_tsvector,
+                type:   :tsvector,
+                as:     "to_tsvector('english'::regconfig, content)",
+                stored: true
+
+      t.timestamps
+    end
+
+    add_index :curator_chunks, [ :document_id, :sequence ], unique: true
+    add_index :curator_chunks, :content_tsvector, using: :gin
+  end
+end

@@ -1,0 +1,23 @@
+class CreateCuratorEvaluations < ActiveRecord::Migration[7.0]
+  def change
+    create_table :curator_evaluations do |t|
+      t.references :search,
+                   null: false,
+                   foreign_key: { to_table: :curator_searches, on_delete: :cascade },
+                   index: { name: "index_curator_evaluations_on_search_id" }
+
+      t.string :rating,         null: false
+      t.text   :feedback
+      t.text   :ideal_answer
+      t.string :evaluator_id
+      t.string :evaluator_role
+
+      t.string :failure_categories, array: true, null: false, default: []
+
+      t.timestamps
+    end
+
+    add_index :curator_evaluations, :failure_categories, using: :gin
+    add_index :curator_evaluations, :rating
+  end
+end

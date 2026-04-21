@@ -1,0 +1,26 @@
+class CreateCuratorDocuments < ActiveRecord::Migration[7.0]
+  def change
+    create_table :curator_documents do |t|
+      t.references :knowledge_base,
+                   null: false,
+                   foreign_key: { to_table: :curator_knowledge_bases, on_delete: :cascade },
+                   index: { name: "index_curator_documents_on_knowledge_base_id" }
+
+      t.string  :title,        null: false
+      t.string  :source_url
+      t.string  :content_hash, null: false
+      t.string  :mime_type,    null: false
+      t.integer :byte_size,    null: false
+
+      t.string  :status,       null: false, default: "pending"
+      t.text    :stage_error
+
+      t.jsonb   :metadata,     null: false, default: {}
+
+      t.timestamps
+    end
+
+    add_index :curator_documents, :content_hash
+    add_index :curator_documents, :status
+  end
+end

@@ -33,6 +33,20 @@ configuration, and auth plumbing that every later milestone builds on.
       Active Storage abort, RubyLLM migration appearance, and the full
       9-migration set with monotonic timestamps. 83 specs green, rubocop
       clean.
+- [x] Phase 3 — Auth plumbing. A shared `Curator::Authentication` concern
+      exposes `curator_authenticate :admin|:api`, which installs a
+      `before_action` that looks up `Curator.config.authenticate_<hook>_with`
+      and runs it via `instance_exec`. Unconfigured: silent in
+      `Rails.env.test?`, raises `Curator::AuthNotConfigured` pointing at
+      the initializer in dev/prod. Exceptions from the host's block
+      propagate. `Curator::ApplicationController` (ActionController::Base)
+      and `Curator::Api::BaseController` (ActionController::API) each
+      include the concern and declare their hook.
+      `post_install_message` added to the gemspec telling the installer to
+      configure both hooks. Also fixed a load-order bug:
+      `lib/curator-rails.rb` now requires `curator/engine` after
+      `require "curator"`, so the engine registers even when curator.rb has
+      been preloaded by a test helper. 94 specs green, rubocop clean.
 
 **Phase reorder note**: originally sequenced 0→1→models→seed→auth→generator→e2e.
 Reordered to 0→1→generator→auth→models→seed→e2e so the install generator
@@ -99,24 +113,7 @@ spec/
 
 ## Current Work
 
-- [-] Phase 3 — Auth plumbing
-   - `Curator::NullAuthenticator` — single `.call(controller, hook_name)`
-     entry point. In `Rails.env.test?`, return silently. Otherwise raise
-     `Curator::AuthNotConfigured` with a message:
-     `"Curator requires authenticate_#{hook_name}_with to be configured in config/initializers/curator.rb before first use."`
-   - `Curator::ApplicationController` (inherits `ActionController::Base`):
-     - `before_action :authenticate_curator_admin!`
-     - `authenticate_curator_admin!` runs the configured
-       `Curator.config.authenticate_admin_with` block via `instance_exec`,
-       or falls through to `NullAuthenticator`.
-   - `Curator::Api::BaseController` (inherits `ActionController::API`):
-     - `before_action :authenticate_curator_api!`
-     - Same pattern against `authenticate_api_with`.
-   - **Validate**: Phase 3 checklist below.
-
-## Next Steps
-
-- [ ] Phase 4 — Concrete model classes
+- [-] Phase 4 — Concrete model classes
    - `Curator::KnowledgeBase`
      - `has_many :documents, dependent: :destroy`
      - `has_many :searches, dependent: :destroy`
@@ -155,6 +152,8 @@ spec/
    - FactoryBot factories for all models.
    - **Validate**: Phase 4 checklist below.
 
+## Next Steps
+
 - [ ] Phase 5 — Seed task
    - Add `curator:seed_defaults` to `lib/tasks/curator.rake`.
    - Behavior: if no KB has `is_default: true`, create one with
@@ -168,7 +167,7 @@ spec/
      generator, migrates, seeds, boots the engine, and hits
      `GET /curator` to confirm the mount responds (not a 500; 401 from the
      admin auth hook is acceptable when configured, or controller-specific
-     response in test env via NullAuthenticator).
+     response in test env where the auth hook no-ops).
    - **Validate**: Phase 6 checklist below.
 
 ## Validation Strategy
@@ -201,13 +200,13 @@ spec/
 - [ ] Generator invokes `ruby_llm:install` — RubyLLM migrations appear
 
 ### Phase 3 — Auth plumbing
-- [ ] `Rails.env = "test"` + no block: `NullAuthenticator.call(controller, :admin)` returns
-      silently; request passes through
-- [ ] `Rails.env = "development"` + no block: raises
+- [x] `Rails.env = "test"` + no block: request passes through silently
+- [x] `Rails.env = "development"` + no block: raises
       `Curator::AuthNotConfigured` with a pointer to the initializer
-- [ ] Configured block is `instance_exec`d in controller context — block
+- [x] Configured block is `instance_exec`d in controller context — block
       can call `current_user`, `redirect_to`, `main_app` helpers
-- [ ] Symmetric behavior verified for `authenticate_api_with`
+- [x] Symmetric behavior verified for `authenticate_api_with`
+- [x] Exceptions raised in the host's block propagate
 
 ### Phase 4 — Models
 - [ ] `kb1.update!(is_default: true); kb2.update!(is_default: true)` results
@@ -254,7 +253,7 @@ Captured from `/ideate` session on 2026-04-21.
 | 1 | Ship sample controller from install generator in M1? | **No** — `spec/dummy/app/controllers/knowledge_controller.rb` becomes a living, integration-tested example that evolves per milestone (M3 adds `#search`, M4 adds `#ask` + streaming, M8 adds chat). Install generator never writes a sample controller. |
 | 2 | Install generator auto-runs the seed task? | **No**. Generator writes files only; prints next-step instructions. Standard Rails generator hygiene — generators shouldn't do DB ops that can fail for unrelated reasons. |
 | 3 | Enforce one default KB? | **Partial unique index (DB) + model validation (readable errors) + `before_save` auto-flip callback** so flipping the default is a single save. Belt-and-suspenders. |
-| 4 | `NullAuthenticator` behavior? | **Lenient only in `Rails.env.test?`**. Dev + prod raise `Curator::AuthNotConfigured` with a pointer to the initializer. Symmetric for `authenticate_api_with`. |
+| 4 | Unconfigured-auth behavior? | **Lenient only in `Rails.env.test?`**. Dev + prod raise `Curator::AuthNotConfigured` with a pointer to the initializer. Symmetric for `authenticate_api_with`. Inlined into the `Curator::Authentication` concern — no separate `NullAuthenticator` module (three-line logic with one call site). |
 
 Inline decisions (made without asking):
 

@@ -19,6 +19,13 @@ Gem::Specification.new do |spec|
   spec.metadata["source_code_uri"] = spec.homepage
   spec.metadata["changelog_uri"]   = "#{spec.homepage}/blob/main/CHANGELOG.md"
 
+  spec.post_install_message = <<~MSG
+    Curator requires auth hooks before it will serve non-test requests.
+    Configure `authenticate_admin_with` and `authenticate_api_with` in
+    config/initializers/curator.rb after running `rails g curator:install`.
+    Unconfigured requests raise Curator::AuthNotConfigured in dev and prod.
+  MSG
+
   spec.files = Dir.chdir(File.expand_path(__dir__)) do
     Dir["{app,config,db,lib}/**/*", "MIT-LICENSE", "Rakefile", "README.md"]
   end

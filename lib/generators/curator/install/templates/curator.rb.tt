@@ -1,0 +1,81 @@
+# Curator configuration
+#
+# Every setting has a default. Uncomment to override.
+# See the README for the full list of knobs and their semantics.
+
+Curator.configure do |config|
+  # ============================================================
+  # LLM + embedding
+  # ============================================================
+  #
+  # Curator stores a single embedding vector per chunk at a fixed dimension
+  # chosen at install time (set in db/migrate/*_create_curator_embeddings.rb).
+  # Changing the embedding model in a KB that uses a different dimension
+  # requires a migration + re-embed.
+
+  # Per-request retry count for transient LLM errors (network blips, 429s, 5xx).
+  # config.llm_retry_count = 1
+
+  # Hard timeout (in seconds) applied to each LLM + embedding call. `nil` means
+  # rely on the underlying HTTP client defaults.
+  # config.query_timeout = nil
+
+  # Batch size when embedding chunks. Larger batches reduce API round-trips but
+  # blow up memory on big documents.
+  # config.embedding_batch_size = 100
+
+  # ============================================================
+  # Auth
+  # ============================================================
+  #
+  # Curator ships no opinion about auth. Both hooks are required before the
+  # engine is reachable outside the test environment — `NullAuthenticator`
+  # raises `Curator::AuthNotConfigured` in dev/prod until configured.
+  #
+  # The block runs via `instance_exec` inside the controller, so `current_user`,
+  # `session`, `redirect_to`, `main_app.*` helpers are all available.
+
+  # Admin UI (Hotwire views under the mounted engine).
+  # config.authenticate_admin_with do
+  #   redirect_to main_app.new_user_session_path unless current_user&.admin?
+  # end
+
+  # JSON API endpoints (token auth, Doorkeeper, whatever you prefer).
+  # config.authenticate_api_with do
+  #   head :unauthorized unless request.headers["X-API-Key"] == ENV["CURATOR_API_KEY"]
+  # end
+
+  # ============================================================
+  # Ingestion
+  # ============================================================
+
+  # Reject uploads larger than this. Applied before extraction kicks off.
+  # config.max_document_size = 50.megabytes
+
+  # Which extractor to use. `:kreuzberg` requires the Kreuzberg service running
+  # (default, production-grade for PDFs/office docs). `:basic` is pure Ruby —
+  # plaintext + minimal MIME handling, good for tests and small host apps.
+  # config.extractor = :kreuzberg
+
+  # ============================================================
+  # Tracing / logging
+  # ============================================================
+
+  # How much detail to persist on `curator_search_steps` per search.
+  # :full    — every retrieval, rerank, and prompt step with payload
+  # :summary — step_type + timing only; payload omitted
+  # :off     — no search_steps rows written
+  # config.trace_level = :full
+
+  # Log all SQL issued by Curator at DEBUG level. Off by default in production.
+  # config.log_queries = true
+
+  # ============================================================
+  # Reliability
+  # ============================================================
+  #
+  # Curator fails loud: every failure creates a `curator_searches` row with
+  # `status: :failed`. There's no silent retry or degraded mode.
+
+  # (No additional knobs yet — see #llm_retry_count above for the one retry hook.)
+end

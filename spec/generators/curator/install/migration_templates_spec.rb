@@ -54,8 +54,11 @@ RSpec.describe "Curator install migration templates" do
     obj.define_singleton_method(:embedding_dim) { 1536 }
   end
 
-  it "has exactly the expected set of templates" do
-    actual = templates_dir.children.map { |p| p.basename.to_s }.sort
+  it "has exactly the expected set of migration templates" do
+    actual = templates_dir.children
+                          .map { |p| p.basename.to_s }
+                          .grep(/\A(enable_vector|create_curator_|add_curator_)/)
+                          .sort
     expect(actual).to match_array(expected.keys)
   end
 

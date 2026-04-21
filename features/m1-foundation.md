@@ -21,6 +21,18 @@ configuration, and auth plumbing that every later milestone builds on.
       rendering spec (43 examples) asserts each template produces valid Ruby
       with required schema fragments. Actual `db:migrate` against `spec/dummy`
       deferred until the install generator lands in Phase 2.
+- [x] Phase 2 — `Curator::Generators::InstallGenerator` at
+      `lib/generators/curator/install/install_generator.rb`. Class options
+      `--embedding-dim` (default 1536) and `--mount-at` (default `/curator`).
+      Steps: verify Active Storage, chain `ruby_llm:install`
+      (passing `skip_active_storage: true`), copy the 9 migration templates
+      via `migration_template`, render an exhaustive section-grouped
+      `config/initializers/curator.rb`, append `mount Curator::Engine` to
+      host routes, print next-step instructions. `install_generator_spec`
+      covers embedding-dim substitution, mount path, idempotency on re-run,
+      Active Storage abort, RubyLLM migration appearance, and the full
+      9-migration set with monotonic timestamps. 83 specs green, rubocop
+      clean.
 
 **Phase reorder note**: originally sequenced 0→1→models→seed→auth→generator→e2e.
 Reordered to 0→1→generator→auth→models→seed→e2e so the install generator
@@ -87,32 +99,7 @@ spec/
 
 ## Current Work
 
-- [-] Phase 2 — Install generator
-   - `Rails::Generators::Base` subclass at
-     `lib/generators/curator/install/install_generator.rb`.
-   - Class options:
-     - `--embedding-dim` (integer, default 1536)
-     - `--mount-at` (string, default `/curator`)
-   - Steps in `#install` (Thor-style sequence):
-     1. Verify Active Storage installed. Check via
-        `defined?(ActiveStorage::Blob) && ActiveStorage::Blob.table_exists?`.
-        If missing, `say_status :abort, "Active Storage required...", :red`
-        and `exit 1`.
-     2. `invoke "ruby_llm:install"` to chain RubyLLM's generator.
-     3. Copy each migration template with
-        `migration_template "templates/<name>.rb.tt", "db/migrate/<name>.rb"`
-        so Rails assigns monotonic timestamps.
-     4. `template "templates/curator.rb.tt", "config/initializers/curator.rb"`.
-     5. `route "mount Curator::Engine, at: \"#{mount_at}\""`.
-     6. `say_status :info, "Next: rails db:migrate && rails curator:seed_defaults"`.
-   - Initializer template is exhaustive — one commented example per config
-     field, grouped into "LLM + embedding", "Auth", "Ingestion",
-     "Tracing/logging", "Reliability" sections.
-   - **Validate**: Phase 2 checklist below.
-
-## Next Steps
-
-- [ ] Phase 3 — Auth plumbing
+- [-] Phase 3 — Auth plumbing
    - `Curator::NullAuthenticator` — single `.call(controller, hook_name)`
      entry point. In `Rails.env.test?`, return silently. Otherwise raise
      `Curator::AuthNotConfigured` with a message:
@@ -126,6 +113,8 @@ spec/
      - `before_action :authenticate_curator_api!`
      - Same pattern against `authenticate_api_with`.
    - **Validate**: Phase 3 checklist below.
+
+## Next Steps
 
 - [ ] Phase 4 — Concrete model classes
    - `Curator::KnowledgeBase`

@@ -69,11 +69,23 @@ deferrals. `features/initial.md` captures product vision.
 - Both extractor adapters (Kreuzberg + basic) must pass the same adapter
   contract suite.
 
-## Development flow
+## Verification — required after every change
 
-- After code changes, run `bundle exec rspec` and `bundle exec rubocop`.
-- If touching migrations, update `spec/dummy/db/schema.rb` via
-  `cd spec/dummy && bin/rails db:prepare`.
+Run both, in order. Do not mark work complete until both pass.
+
+1. `bundle exec rspec --format progress` — progress formatter (single
+   character per example) keeps output short enough to scan in one tool
+   result. Use `--format documentation` only when focusing on a single
+   spec file during debugging.
+2. `bundle exec rubocop` — must end with "no offenses detected".
+
+If specs fail or rubocop reports offenses, fix the underlying issue — do
+not suppress warnings or skip tests. If touching migrations, update
+`spec/dummy/db/schema.rb` via `cd spec/dummy && bin/rails db:prepare`
+before rerunning specs.
+
+## Other development notes
+
 - Design docs in `features/` are living documents — update them when
   decisions change, don't just add new files.
 

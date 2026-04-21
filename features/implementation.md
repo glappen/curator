@@ -657,7 +657,8 @@ Modifies:
 - `config/routes.rb` — adds mount line
 
 Does NOT:
-- Configure auth (ships with a `NullAuthenticator` raising in non-test envs)
+- Configure auth (unconfigured requests raise `Curator::AuthNotConfigured`
+  in non-test envs)
 - Install ActiveJob backend (user chooses)
 - Install Active Storage (prints warning with install command, exits non-zero
   if missing)
@@ -809,7 +810,9 @@ is demo-able end-to-end via CLI).
 - Model classes with associations + validations (no business logic yet)
 - `curator:seed_defaults` rake task (seeds default KB; invoked post-install)
 - Auth hook plumbing (`ApplicationController`, `Api::BaseController`
-  dispatching to configured blocks; `NullAuthenticator` for unconfigured envs)
+  dispatching to configured blocks via a shared `Curator::Authentication`
+  concern; unconfigured envs raise `Curator::AuthNotConfigured` in dev/prod
+  and no-op in test)
 
 ### M2 — Ingestion
 - Pluggable extractor adapters (Kreuzberg + basic) and `ExtractionResult`

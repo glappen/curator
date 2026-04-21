@@ -29,8 +29,8 @@ Curator.configure do |config|
   # ============================================================
   #
   # Curator ships no opinion about auth. Both hooks are required before the
-  # engine is reachable outside the test environment — `NullAuthenticator`
-  # raises `Curator::AuthNotConfigured` in dev/prod until configured.
+  # engine is reachable outside the test environment — unconfigured requests
+  # raise `Curator::AuthNotConfigured` in dev/prod.
   #
   # The block runs via `instance_exec` inside the controller, so `current_user`,
   # `session`, `redirect_to`, `main_app.*` helpers are all available.

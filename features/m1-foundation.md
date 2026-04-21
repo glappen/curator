@@ -20,8 +20,12 @@ configuration, and auth plumbing that every later milestone builds on.
       templates under `lib/generators/curator/install/templates/`. Template
       rendering spec (43 examples) asserts each template produces valid Ruby
       with required schema fragments. Actual `db:migrate` against `spec/dummy`
-      deferred until Postgres + pgvector are running — will land in Phase 5
-      end-to-end validation.
+      deferred until the install generator lands in Phase 2.
+
+**Phase reorder note**: originally sequenced 0→1→models→seed→auth→generator→e2e.
+Reordered to 0→1→generator→auth→models→seed→e2e so the install generator
+(which has no model deps) can land early, unblocking host-app install
+testing and giving Phase 4's model specs a real DB schema to run against.
 
 ## Files Under Development
 
@@ -83,7 +87,47 @@ spec/
 
 ## Current Work
 
-- [-] Phase 2 — Concrete model classes
+- [-] Phase 2 — Install generator
+   - `Rails::Generators::Base` subclass at
+     `lib/generators/curator/install/install_generator.rb`.
+   - Class options:
+     - `--embedding-dim` (integer, default 1536)
+     - `--mount-at` (string, default `/curator`)
+   - Steps in `#install` (Thor-style sequence):
+     1. Verify Active Storage installed. Check via
+        `defined?(ActiveStorage::Blob) && ActiveStorage::Blob.table_exists?`.
+        If missing, `say_status :abort, "Active Storage required...", :red`
+        and `exit 1`.
+     2. `invoke "ruby_llm:install"` to chain RubyLLM's generator.
+     3. Copy each migration template with
+        `migration_template "templates/<name>.rb.tt", "db/migrate/<name>.rb"`
+        so Rails assigns monotonic timestamps.
+     4. `template "templates/curator.rb.tt", "config/initializers/curator.rb"`.
+     5. `route "mount Curator::Engine, at: \"#{mount_at}\""`.
+     6. `say_status :info, "Next: rails db:migrate && rails curator:seed_defaults"`.
+   - Initializer template is exhaustive — one commented example per config
+     field, grouped into "LLM + embedding", "Auth", "Ingestion",
+     "Tracing/logging", "Reliability" sections.
+   - **Validate**: Phase 2 checklist below.
+
+## Next Steps
+
+- [ ] Phase 3 — Auth plumbing
+   - `Curator::NullAuthenticator` — single `.call(controller, hook_name)`
+     entry point. In `Rails.env.test?`, return silently. Otherwise raise
+     `Curator::AuthNotConfigured` with a message:
+     `"Curator requires authenticate_#{hook_name}_with to be configured in config/initializers/curator.rb before first use."`
+   - `Curator::ApplicationController` (inherits `ActionController::Base`):
+     - `before_action :authenticate_curator_admin!`
+     - `authenticate_curator_admin!` runs the configured
+       `Curator.config.authenticate_admin_with` block via `instance_exec`,
+       or falls through to `NullAuthenticator`.
+   - `Curator::Api::BaseController` (inherits `ActionController::API`):
+     - `before_action :authenticate_curator_api!`
+     - Same pattern against `authenticate_api_with`.
+   - **Validate**: Phase 3 checklist below.
+
+- [ ] Phase 4 — Concrete model classes
    - `Curator::KnowledgeBase`
      - `has_many :documents, dependent: :destroy`
      - `has_many :searches, dependent: :destroy`
@@ -120,52 +164,14 @@ spec/
      - `validate :failure_categories_are_known` —
        `FAILURE_CATEGORIES = %w[hallucination wrong_retrieval incomplete wrong_citation refused_incorrectly off_topic other]`
    - FactoryBot factories for all models.
-   - **Validate**: Phase 2 checklist below.
+   - **Validate**: Phase 4 checklist below.
 
-- [ ] Phase 3 — Seed task
+- [ ] Phase 5 — Seed task
    - Add `curator:seed_defaults` to `lib/tasks/curator.rake`.
    - Behavior: if no KB has `is_default: true`, create one with
      `name: "Default"`, `slug: "default"`, `is_default: true`,
      `embedding_model: "text-embedding-3-small"`, `chat_model: "gpt-5-mini"`,
      and the default chunk/retrieval settings from the spec.
-   - **Validate**: Phase 3 checklist below.
-
-- [ ] Phase 4 — Auth plumbing
-   - `Curator::NullAuthenticator` — single `.call(controller, hook_name)`
-     entry point. In `Rails.env.test?`, return silently. Otherwise raise
-     `Curator::AuthNotConfigured` with a message:
-     `"Curator requires authenticate_#{hook_name}_with to be configured in config/initializers/curator.rb before first use."`
-   - `Curator::ApplicationController` (inherits `ActionController::Base`):
-     - `before_action :authenticate_curator_admin!`
-     - `authenticate_curator_admin!` runs the configured
-       `Curator.config.authenticate_admin_with` block via `instance_exec`,
-       or falls through to `NullAuthenticator`.
-   - `Curator::Api::BaseController` (inherits `ActionController::API`):
-     - `before_action :authenticate_curator_api!`
-     - Same pattern against `authenticate_api_with`.
-   - **Validate**: Phase 4 checklist below.
-
-- [ ] Phase 5 — Install generator
-   - `Rails::Generators::Base` subclass at
-     `lib/generators/curator/install/install_generator.rb`.
-   - Class options:
-     - `--embedding-dim` (integer, default 1536)
-     - `--mount-at` (string, default `/curator`)
-   - Steps in `#install` (Thor-style sequence):
-     1. Verify Active Storage installed. Check via
-        `defined?(ActiveStorage::Blob) && ActiveStorage::Blob.table_exists?`.
-        If missing, `say_status :abort, "Active Storage required...", :red`
-        and `exit 1`.
-     2. `invoke "ruby_llm:install"` to chain RubyLLM's generator.
-     3. Copy each migration template with
-        `migration_template "templates/<name>.rb.tt", "db/migrate/<name>.rb"`
-        so Rails assigns monotonic timestamps.
-     4. `template "templates/curator.rb.tt", "config/initializers/curator.rb"`.
-     5. `route "mount Curator::Engine, at: \"#{mount_at}\""`.
-     6. `say_status :info, "Next: rails db:migrate && rails curator:seed_defaults"`.
-   - Initializer template is exhaustive — one commented example per config
-     field, grouped into "LLM + embedding", "Auth", "Ingestion",
-     "Tracing/logging", "Reliability" sections.
    - **Validate**: Phase 5 checklist below.
 
 - [ ] Phase 6 — End-to-end smoke
@@ -195,29 +201,7 @@ spec/
 - [ ] `curator_embeddings.embedding` column type is `vector(1536)` by default
 - [ ] `chats.curator_scope` column exists and is nullable
 
-### Phase 2 — Models
-- [ ] `kb1.update!(is_default: true); kb2.update!(is_default: true)` results
-      in `kb1.reload.is_default == false`, `kb2.is_default == true`
-- [ ] Creating two KBs with identical slug raises `ActiveRecord::RecordInvalid`
-- [ ] Evaluation with `failure_categories: ["bogus"]` fails validation
-- [ ] Deleting a KB cascades to documents, chunks, embeddings, searches,
-      search_steps, evaluations (zero orphans)
-
-### Phase 3 — Seed
-- [ ] Fresh DB: `bundle exec rake curator:seed_defaults` creates exactly
-      one KB with `is_default: true`, `slug: "default"`
-- [ ] Running the task a second time results in no change and no error
-
-### Phase 4 — Auth plumbing
-- [ ] `Rails.env = "test"` + no block: `NullAuthenticator.call(controller, :admin)` returns
-      silently; request passes through
-- [ ] `Rails.env = "development"` + no block: raises
-      `Curator::AuthNotConfigured` with a pointer to the initializer
-- [ ] Configured block is `instance_exec`d in controller context — block
-      can call `current_user`, `redirect_to`, `main_app` helpers
-- [ ] Symmetric behavior verified for `authenticate_api_with`
-
-### Phase 5 — Install generator
+### Phase 2 — Install generator
 - [ ] `rails g curator:install --embedding-dim=3072` writes a migration
       containing `vector(3072)`
 - [ ] `rails g curator:install --mount-at=/kb` writes
@@ -226,6 +210,28 @@ spec/
       (existing timestamped migrations detected)
 - [ ] No Active Storage: generator prints `:abort` status and exits non-zero
 - [ ] Generator invokes `ruby_llm:install` — RubyLLM migrations appear
+
+### Phase 3 — Auth plumbing
+- [ ] `Rails.env = "test"` + no block: `NullAuthenticator.call(controller, :admin)` returns
+      silently; request passes through
+- [ ] `Rails.env = "development"` + no block: raises
+      `Curator::AuthNotConfigured` with a pointer to the initializer
+- [ ] Configured block is `instance_exec`d in controller context — block
+      can call `current_user`, `redirect_to`, `main_app` helpers
+- [ ] Symmetric behavior verified for `authenticate_api_with`
+
+### Phase 4 — Models
+- [ ] `kb1.update!(is_default: true); kb2.update!(is_default: true)` results
+      in `kb1.reload.is_default == false`, `kb2.is_default == true`
+- [ ] Creating two KBs with identical slug raises `ActiveRecord::RecordInvalid`
+- [ ] Evaluation with `failure_categories: ["bogus"]` fails validation
+- [ ] Deleting a KB cascades to documents, chunks, embeddings, searches,
+      search_steps, evaluations (zero orphans)
+
+### Phase 5 — Seed
+- [ ] Fresh DB: `bundle exec rake curator:seed_defaults` creates exactly
+      one KB with `is_default: true`, `slug: "default"`
+- [ ] Running the task a second time results in no change and no error
 
 ### Phase 6 — End-to-end
 - [ ] Fresh DB + install + migrate + seed + GET `/curator` returns non-500

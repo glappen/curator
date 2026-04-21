@@ -1,0 +1,19 @@
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  host: <%= ENV.fetch("CURATOR_PG_HOST", "localhost") %>
+  username: <%= ENV.fetch("CURATOR_PG_USER", ENV["USER"]) %>
+  password: <%= ENV["CURATOR_PG_PASSWORD"] %>
+
+development:
+  <<: *default
+  database: curator_dummy_development
+
+test:
+  <<: *default
+  database: curator_dummy_test
+
+production:
+  <<: *default
+  database: curator_dummy_production

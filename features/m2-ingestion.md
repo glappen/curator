@@ -12,6 +12,62 @@ plus the "Ingestion Pipeline" and "Extractor contract" sections.
 
 ## Completed
 
+- [x] Phase 4 — `Curator.ingest` + SHA-256 dedup + stub embed job
+   - `Curator.ingest(file, knowledge_base:, title:, source_url:, metadata:, filename:)`
+     module method in `lib/curator.rb`. Accepts String, Pathname, File,
+     IO, StringIO, `ActionDispatch::Http::UploadedFile`, and
+     `ActiveStorage::Blob`; `filename:` is an escape hatch for anonymous
+     IO inputs.
+   - `knowledge_base:` accepts a `KnowledgeBase` instance **or** a
+     slug (`String`/`Symbol`). Slugs resolve via
+     `KnowledgeBase.find_by!(slug:)` — a missing slug raises
+     `ActiveRecord::RecordNotFound`. This makes the console ergonomic
+     path (`Curator.ingest(path, knowledge_base: "default")`) work
+     without the caller having to fetch the record first.
+   - `Curator::FileNormalizer` (`lib/curator/file_normalizer.rb`)
+     produces a `Normalized(bytes, filename, mime_type)` struct. MIME
+     detection prefers the caller's `content_type` (UploadedFile / Blob)
+     and falls back to `Marcel::MimeType.for` — the latter is already
+     loaded transitively by ActiveStorage, so no new gemspec dep.
+   - SHA-256 over `normalized.bytes`. Size check against
+     `config.max_document_size` runs after normalization (simpler than
+     per-input-type presizing) but before any DB write — oversized
+     inputs raise `FileTooLargeError` with zero side effects.
+   - Dedup via `knowledge_base.documents.find_by(content_hash:)`. Hit →
+     `IngestResult(status: :duplicate)` referencing the existing doc,
+     no job enqueued. Dedup is **per knowledge base**; the same file in
+     two KBs creates two documents (regression spec).
+   - Miss path: create `curator_documents` row with `status: :pending`,
+     attach `has_one_attached :file` from a `StringIO` wrapper, enqueue
+     `Curator::IngestDocumentJob.perform_later(document)`, return
+     `IngestResult(status: :created)`. Title defaults to the filename
+     stem (`File.basename(name, ".*")`) when not supplied.
+   - `Curator::IngestResult` (`lib/curator/ingest_result.rb`) is a
+     `Data.define(:document, :status, :reason)` with a status allowlist
+     (`:created`, `:duplicate`) and `#created?` / `#duplicate?` predicates.
+     Strict status validation so future additions (e.g. `:skipped`)
+     have to land in the allowlist explicitly.
+   - Stubs under `app/jobs/curator/` to keep the pipeline enqueueable
+     before Phase 5 lands the real body:
+     - `ApplicationJob` parent class.
+     - `IngestDocumentJob#perform` just advances `status: :embedding` and
+       enqueues `EmbedChunksJob`. Real extract → chunk → insert lands in
+       Phase 5 (marked with an inline `TODO(Phase 5)`).
+     - `EmbedChunksJob#perform` flips the document to `:complete`. Real
+       embedding pipeline lands in M3 (`TODO(M3)`).
+   - **URL ingest** (pulled forward from Phase 6):
+     `Curator.ingest_url(url, knowledge_base:, title:, source_url:, metadata:)`
+     plus `Curator::UrlFetcher` (`lib/curator/url_fetcher.rb`). Net::HTTP
+     GET with up to 5 redirect hops, 10s open / 30s read timeouts.
+     Filename comes from `Content-Disposition` (filename / filename*=),
+     falling back to the URL path basename, then `"download"`. `source_url:`
+     defaults to the resolved final URL so documents self-document their
+     origin. Enforces `max_document_size` against the response body;
+     socket errors wrap as `Curator::FetchError`. SSRF hardening
+     (private-range blocklist, metadata endpoint guard) is explicitly
+     deferred to v2 — host apps pick which URLs they trust today.
+   - Full `rspec` (244 examples) + `rubocop` green.
+
 - [x] Phase 3 — Chunker
    - `Curator::TokenCounter` shipped at `lib/curator/token_counter.rb`
      as a char-based heuristic (`CHARS_PER_TOKEN = 4`, `.count` ceils
@@ -95,33 +151,10 @@ plus the "Ingestion Pipeline" and "Extractor contract" sections.
 
 ## Current Work
 
-_Phase 3 done; awaiting go-ahead on Phase 4._
+_Phase 4 done; awaiting go-ahead on Phase 5._
 
 ## Next Steps
 
-- [ ] Phase 4 — `Curator.ingest` + SHA-256 dedup + stub `EmbedChunksJob`
-   - `Curator.ingest(file, knowledge_base:, title: nil, source_url: nil, metadata: {})`
-     module method under `lib/curator.rb`.
-   - File normalization: accept `String` path, `Pathname`, `File`, `IO`,
-     `ActionDispatch::Http::UploadedFile`, `ActiveStorage::Blob`.
-     Normalize to `{ bytes, filename, mime_type }` via a small
-     `Curator::FileNormalizer` helper.
-   - SHA-256 over bytes. Size check against `Curator.config.max_document_size`
-     before any DB write — oversize raises `Curator::FileTooLargeError`.
-   - Dedup: look up `(knowledge_base_id, content_hash)` on
-     `curator_documents`. On hit, return
-     `Curator::IngestResult.new(document: existing, status: :duplicate)`
-     with no side effects.
-   - On miss: create `curator_documents` row with `status: :pending`,
-     attach file via `has_one_attached :file`, enqueue
-     `IngestDocumentJob.perform_later(document)`, return
-     `IngestResult.new(document:, status: :created)`.
-   - `Curator::IngestResult` value object (`document:, status:, reason:`)
-     under `lib/curator/ingest_result.rb`.
-   - Stub `app/jobs/curator/embed_chunks_job.rb`: single
-     `def perform(document); document.update!(status: :complete); end`
-     with an inline `# TODO(M3): real embedding pipeline` comment. Full
-     body lands in M3.
 - [ ] Phase 5 — `IngestDocumentJob`
    - `app/jobs/curator/ingest_document_job.rb` inheriting
      `ApplicationJob` (create `app/jobs/curator/application_job.rb` too).

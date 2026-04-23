@@ -11,4 +11,6 @@ module Curator
   class ExtractionError < Error; end
   class UnsupportedMimeError < ExtractionError; end
   class FileTooLargeError < Error; end
+
+  class FetchError < Error; end
 end

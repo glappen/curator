@@ -10,6 +10,9 @@ require "rspec/rails"
 require "webmock/rspec"
 require "factory_bot_rails"
 
+FactoryBot.definition_file_paths = [ Curator::Engine.root.join("spec/factories") ]
+FactoryBot.find_definitions
+
 Dir[Curator::Engine.root.join("spec/support/**/*.rb")].each { |f| require f }
 
 begin

@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Regenerate spec/dummy from scratch: drop DBs, re-run active_storage + ruby_llm
+# + curator install generators, migrate, prepare the test DB.
+#
+# Use this after editing any migration template under
+# lib/generators/curator/install/templates/. Rails' migration_template dedupes
+# by class name, so re-running `curator:install` against an already-installed
+# dummy is a no-op — we have to wipe the generated artifacts first.
+#
+# Safe to run repeatedly; it's not safe against a host app (will drop databases).
+
+set -euo pipefail
+
+ENGINE_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ENGINE_ROOT/spec/dummy"
+
+echo "--> Removing generated migrations, schema, initializers"
+rm -rf db/schema.rb db/migrate
+rm -f config/initializers/curator.rb
+rm -f config/initializers/ruby_llm.rb
+rm -rf app/agents app/prompts app/schemas app/tools
+rm -f app/models/chat.rb app/models/message.rb app/models/model.rb app/models/tool_call.rb
+
+echo "--> Resetting routes.rb to pristine (generator will re-append mount line)"
+cat > config/routes.rb <<'EOF'
+Rails.application.routes.draw do
+end
+EOF
+
+echo "--> Dropping and recreating databases"
+bin/rails db:drop db:create
+
+echo "--> Installing Active Storage"
+bin/rails active_storage:install
+bin/rails db:migrate
+
+echo "--> Running curator:install (chains ruby_llm:install)"
+bin/rails generate curator:install --mount-at=/curator --embedding-dim=1536
+
+echo "--> Migrating and preparing test DB"
+bin/rails db:migrate
+bin/rails db:test:prepare
+
+echo "--> Done. spec/dummy/db and other generator output are gitignored pre-v1."

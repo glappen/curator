@@ -47,6 +47,37 @@ configuration, and auth plumbing that every later milestone builds on.
       `lib/curator-rails.rb` now requires `curator/engine` after
       `require "curator"`, so the engine registers even when curator.rb has
       been preloaded by a test helper. 94 specs green, rubocop clean.
+- [x] Phase 4 — Concrete model classes. Eight AR models under
+      `app/models/curator/`: `KnowledgeBase`, `Document`, `Chunk`,
+      `Embedding`, `Search`, `SearchStep`, `Evaluation` (plus the existing
+      `ApplicationRecord` base). `KnowledgeBase` enforces single-default
+      via a `before_save` callback (no uniqueness validator — the partial
+      DB index is the hard backstop, and a validator would conflict with
+      the callback's swap semantics). `Embedding` uses `has_neighbors
+      :embedding` via the neighbor gem. `Evaluation` exposes
+      `FAILURE_CATEGORIES` and `FAILURE_CATEGORY_TOOLTIPS` constants and
+      validates `failure_categories` is a subset of the taxonomy.
+      `Search.chat` / `Search.message` are `optional: true` belongs_to
+      into RubyLLM-owned `Chat` / `Message`. FactoryBot factories for all
+      seven models under `spec/factories/`. 128 specs green, rubocop clean.
+
+      Also fixed a second RubyLLM load-order bug: `require "ruby_llm"`
+      moved from `lib/curator.rb` to `lib/curator-rails.rb`. In the spec
+      flow, `spec_helper` preloads `curator` before Rails boots; requiring
+      `ruby_llm` at that point hits the `if defined?(Rails::Railtie)` guard
+      in `ruby_llm/railtie.rb` before Rails is loaded, so the Railtie class
+      is never defined and the `on_load(:active_record)` callback that
+      installs `acts_as_chat` never registers. Moving the require into
+      `curator-rails.rb` defers it until Bundler.require loads the gem
+      (which happens after Rails is up).
+
+      Generated `spec/dummy/db/schema.rb` and `spec/dummy/db/migrate/**`
+      are now excluded from rubocop — regenerated on every `db:migrate`
+      and offenses are outside our control.
+
+      Also added `FactoryBot.definition_file_paths` to `rails_helper.rb`
+      pointing at the engine's `spec/factories` (factory_bot_rails only
+      auto-discovers factories relative to the host app).
 
 **Phase reorder note**: originally sequenced 0→1→models→seed→auth→generator→e2e.
 Reordered to 0→1→generator→auth→models→seed→e2e so the install generator
@@ -113,48 +144,7 @@ spec/
 
 ## Current Work
 
-- [-] Phase 4 — Concrete model classes
-   - `Curator::KnowledgeBase`
-     - `has_many :documents, dependent: :destroy`
-     - `has_many :searches, dependent: :destroy`
-     - `validates :name, presence: true`
-     - `validates :slug, presence: true, uniqueness: true, format: /\A[a-z0-9_-]+\z/`
-     - `validates :chunk_size, numericality: { greater_than: 0 }`
-     - `validates :is_default, uniqueness: true, if: :is_default?`
-     - `before_save :unset_prior_default` when becoming default
-   - `Curator::Document`
-     - `belongs_to :knowledge_base`
-     - `has_many :chunks, dependent: :destroy`
-     - `has_one_attached :file`
-     - `enum status: %i[pending extracting embedding complete failed]`
-     - `validates :title, :content_hash, :mime_type, presence: true`
-   - `Curator::Chunk`
-     - `belongs_to :document`
-     - `has_one :embedding, dependent: :destroy`
-     - `enum status: %i[pending embedded failed]`
-   - `Curator::Embedding`
-     - `belongs_to :chunk`
-     - neighbor setup: `has_neighbors :embedding`
-   - `Curator::Search`
-     - `belongs_to :knowledge_base`
-     - `belongs_to :chat, class_name: "Chat", optional: true`
-     - `belongs_to :message, class_name: "Message", optional: true`
-     - `has_many :search_steps, dependent: :destroy`
-     - `has_many :evaluations, dependent: :destroy`
-     - `enum status: %i[success failed]`
-   - `Curator::SearchStep`
-     - `belongs_to :search`
-   - `Curator::Evaluation`
-     - `belongs_to :search`
-     - `enum rating: %i[positive negative]`
-     - `validate :failure_categories_are_known` —
-       `FAILURE_CATEGORIES = %w[hallucination wrong_retrieval incomplete wrong_citation refused_incorrectly off_topic other]`
-   - FactoryBot factories for all models.
-   - **Validate**: Phase 4 checklist below.
-
-## Next Steps
-
-- [ ] Phase 5 — Seed task
+- [-] Phase 5 — Seed task
    - Add `curator:seed_defaults` to `lib/tasks/curator.rake`.
    - Behavior: if no KB has `is_default: true`, create one with
      `name: "Default"`, `slug: "default"`, `is_default: true`,
@@ -209,11 +199,11 @@ spec/
 - [x] Exceptions raised in the host's block propagate
 
 ### Phase 4 — Models
-- [ ] `kb1.update!(is_default: true); kb2.update!(is_default: true)` results
+- [x] `kb1.update!(is_default: true); kb2.update!(is_default: true)` results
       in `kb1.reload.is_default == false`, `kb2.is_default == true`
-- [ ] Creating two KBs with identical slug raises `ActiveRecord::RecordInvalid`
-- [ ] Evaluation with `failure_categories: ["bogus"]` fails validation
-- [ ] Deleting a KB cascades to documents, chunks, embeddings, searches,
+- [x] Creating two KBs with identical slug raises `ActiveRecord::RecordInvalid`
+- [x] Evaluation with `failure_categories: ["bogus"]` fails validation
+- [x] Deleting a KB cascades to documents, chunks, embeddings, searches,
       search_steps, evaluations (zero orphans)
 
 ### Phase 5 — Seed

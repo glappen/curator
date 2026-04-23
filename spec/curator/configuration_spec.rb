@@ -36,6 +36,41 @@ RSpec.describe Curator::Configuration do
       expect(config.authenticate_admin_with).to be_nil
       expect(config.authenticate_api_with).to be_nil
     end
+
+    it "disables OCR and force_ocr, defaulting ocr_language to eng" do
+      expect(config.ocr).to be(false)
+      expect(config.force_ocr).to be(false)
+      expect(config.ocr_language).to eq("eng")
+    end
+  end
+
+  describe "#ocr=" do
+    it "accepts false, nil -> false" do
+      config.ocr = true
+      config.ocr = false
+      expect(config.ocr).to be(false)
+
+      config.ocr = true
+      config.ocr = nil
+      expect(config.ocr).to be(false)
+    end
+
+    it "maps true to :tesseract" do
+      config.ocr = true
+      expect(config.ocr).to eq(:tesseract)
+    end
+
+    it "accepts explicit backend symbols" do
+      config.ocr = :tesseract
+      expect(config.ocr).to eq(:tesseract)
+      config.ocr = :paddle
+      expect(config.ocr).to eq(:paddle)
+    end
+
+    it "rejects unknown values" do
+      expect { config.ocr = :aws_textract }.to raise_error(ArgumentError, /ocr must be one of/)
+      expect { config.ocr = "tesseract" }.to raise_error(ArgumentError, /ocr must be one of/)
+    end
   end
 
   describe "#extractor=" do

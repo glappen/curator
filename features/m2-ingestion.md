@@ -12,6 +12,34 @@ plus the "Ingestion Pipeline" and "Extractor contract" sections.
 
 ## Completed
 
+- [x] Phase 2 — Kreuzberg adapter
+   - `gem "kreuzberg"` added to `Gemfile` under `:development, :test`
+     only (verified by a regression spec that also asserts the gemspec
+     does not reference it).
+   - `Curator::Extractors::Kreuzberg` lazy-requires the gem on first
+     use; `LoadError` is translated into `ExtractionError` with a
+     Gemfile-pointing message. Other `StandardError`s from kreuzberg
+     are also wrapped as `ExtractionError`.
+   - API: `::Kreuzberg.extract_file_sync(path: ...)` — keyword arg,
+     returns `Kreuzberg::Result` with `.content`, `.mime_type`, and
+     optional `.pages` (`Array<PageContent>` or `nil`).
+   - Pages normalized to `[{ page_number:, content: }, ...]` — the
+     shape Phase 3's chunker will scan against. Empty for formats
+     kreuzberg doesn't paginate.
+   - Shared contract runs live against kreuzberg for `.md` / `.csv` /
+     `.html` fixtures.
+   - **OCR plumbing (added in-phase after Phase 2 ideation):**
+     `Curator::Configuration` gained `ocr` (`false`/`true`/`:tesseract`/`:paddle`),
+     `ocr_language` (default `"eng"`), `force_ocr` (default `false`).
+     Adapter constructor accepts the same kwargs and translates them
+     into `Kreuzberg::Config::OCR` + `Kreuzberg::Config::Extraction`,
+     passed via `config:` kwarg to `extract_file_sync`. Phase 5's
+     `IngestDocumentJob` will read `Curator.config.*` when it
+     instantiates the adapter.
+   - README documents the `:basic` vs `:kreuzberg` split plus OCR
+     system deps (tesseract / paddle).
+   - Full `rspec` (183 examples) + `rubocop` green.
+
 - [x] Phase 1 — Extractor contract + Basic extractor
    - `Curator::Extractors::ExtractionResult` value object
      (`content`, `mime_type`, `pages`) under `lib/curator/extractors/`.
@@ -30,21 +58,10 @@ plus the "Ingestion Pipeline" and "Extractor contract" sections.
 
 ## Current Work
 
-_Phase 1 done; awaiting go-ahead on Phase 2._
+_Phase 2 done; awaiting go-ahead on Phase 3._
 
 ## Next Steps
 
-- [ ] Phase 2 — Kreuzberg adapter
-   - `kreuzberg` gem added to the engine `Gemfile` in `:development, :test`
-     group only — **not** to the gemspec. Host apps that want Kreuzberg
-     add the gem themselves.
-   - `Curator::Extractors::Kreuzberg` delegating to `::Kreuzberg.extract_file_sync`,
-     building `ExtractionResult` from `result.content`, `result.mime_type`,
-     and `result.pages`. Raises `Curator::ExtractionError` on Kreuzberg
-     failures.
-   - On first use without the gem loaded: raise with message `"Extractor :kreuzberg requires the kreuzberg gem — add `gem \"kreuzberg\"` to your Gemfile."`
-   - Contract spec runs against `Kreuzberg` when the gem is loaded, skipped
-     with a clear `pending` reason otherwise.
 - [ ] Phase 3 — Chunker
    - `Curator::Chunkers::Paragraph` under `lib/curator/chunkers/`. Read
      baran's source first to crib overlap math + edge-case list; write

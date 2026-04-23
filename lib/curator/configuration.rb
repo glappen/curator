@@ -6,13 +6,16 @@ module Curator
   class Configuration
     EXTRACTORS    = %i[kreuzberg basic].freeze
     TRACE_LEVELS  = %i[full summary off].freeze
+    OCR_BACKENDS  = %i[tesseract paddle].freeze
 
-    attr_reader :extractor, :trace_level
+    attr_reader :extractor, :trace_level, :ocr
     attr_accessor :max_document_size,
                   :log_queries,
                   :llm_retry_count,
                   :query_timeout,
-                  :embedding_batch_size
+                  :embedding_batch_size,
+                  :ocr_language,
+                  :force_ocr
 
     def initialize
       @extractor            = :kreuzberg
@@ -22,6 +25,9 @@ module Curator
       @llm_retry_count      = 1
       @query_timeout        = nil
       @embedding_batch_size = 100
+      @ocr                  = false
+      @ocr_language         = "eng"
+      @force_ocr            = false
       @authenticate_admin_with = nil
       @authenticate_api_with   = nil
     end
@@ -38,6 +44,22 @@ module Curator
         raise ArgumentError, "trace_level must be one of #{TRACE_LEVELS.inspect} (got #{value.inspect})"
       end
       @trace_level = value
+    end
+
+    # OCR toggle for the Kreuzberg extractor. Accepts:
+    #   - `false` (default): no OCR
+    #   - `true`:             enable OCR with the default `:tesseract` backend
+    #   - `:tesseract` / `:paddle`: enable OCR with a specific backend
+    def ocr=(value)
+      @ocr =
+        case value
+        when false, nil then false
+        when true       then :tesseract
+        when *OCR_BACKENDS then value
+        else
+          raise ArgumentError,
+                "ocr must be one of false, true, #{OCR_BACKENDS.map(&:inspect).join(', ')} (got #{value.inspect})"
+        end
     end
 
     # Dual-mode: with a block, stores the block as the admin auth hook.

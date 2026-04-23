@@ -52,10 +52,23 @@ Curator.configure do |config|
   # Reject uploads larger than this. Applied before extraction kicks off.
   # config.max_document_size = 50.megabytes
 
-  # Which extractor to use. `:kreuzberg` requires the Kreuzberg service running
-  # (default, production-grade for PDFs/office docs). `:basic` is pure Ruby —
-  # plaintext + minimal MIME handling, good for tests and small host apps.
+  # Which extractor to use.
+  #   :kreuzberg — production-grade for PDFs, Office docs, images, and 50+
+  #                other formats. Requires the `kreuzberg` gem in your
+  #                Gemfile (not pulled in by default):
+  #                  gem "kreuzberg"
+  #   :basic     — pure-Ruby text/markdown/csv/html only. No extra deps;
+  #                good for tests and small host apps.
   # config.extractor = :kreuzberg
+
+  # OCR (Kreuzberg extractor only). Off by default — Kreuzberg returns only
+  # embedded text. Turn on to extract text from scanned PDFs, slide images,
+  # and photos. The OCR engine itself is a system dep you install separately
+  # (tesseract or paddle); curator-rails does not ship it.
+  #
+  #   config.ocr          = :tesseract   # or `true` (same as :tesseract), or :paddle
+  #   config.ocr_language = "eng"        # tesseract/paddle language code
+  #   config.force_ocr    = false        # true = re-OCR pages that already carry embedded text
 
   # ============================================================
   # Tracing / logging

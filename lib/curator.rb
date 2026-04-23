@@ -3,6 +3,7 @@ require "curator/errors"
 require "curator/configuration"
 require "curator/extractors/extraction_result"
 require "curator/extractors/basic"
+require "curator/extractors/kreuzberg"
 
 # Note: `curator/engine` and the `ruby_llm` / `neighbor` requires live in
 # lib/curator-rails.rb, which Bundler.require loads *after* Rails boots.

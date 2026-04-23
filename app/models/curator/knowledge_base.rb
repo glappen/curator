@@ -19,6 +19,16 @@ module Curator
 
     before_save :unset_prior_default, if: -> { is_default? && is_default_changed? }
 
+    def self.seed_default!
+      find_by(is_default: true) || create!(
+        name: "Default",
+        slug: "default",
+        is_default: true,
+        embedding_model: "text-embedding-3-small",
+        chat_model: "gpt-5-mini"
+      )
+    end
+
     private
 
     def unset_prior_default

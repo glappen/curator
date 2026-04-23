@@ -68,6 +68,19 @@ configuration, and auth plumbing that every later milestone builds on.
       inherit their DB defaults). Idempotent: a second invocation is a
       no-op. Covered by model specs on `.seed_default!` and a rake-level
       integration spec under `spec/tasks/`. 134 specs green.
+- [x] Phase 6 — End-to-end smoke. Engine now has a minimal route
+      (`root "dashboard#index"` in `config/routes.rb`) and
+      `Curator::DashboardController` that renders `"Curator"` — just
+      enough surface for `GET /curator` to resolve through the mount
+      and the auth hook. `spec/requests/curator/engine_smoke_spec.rb`
+      seeds the default KB, issues `GET /curator`, and asserts 200
+      (auth no-ops in test env per Phase 3). Path-recognition example
+      pins the route to `curator/dashboard#index`. Generator idempotence
+      ("rerun is a no-op") is covered by the existing
+      `spec/generators/curator/install/install_generator_spec.rb`.
+      Placed under `spec/requests/` rather than `spec/system/` — a
+      system spec would need Capybara/browser, request spec is the right
+      level for smoke. 137 specs green, rubocop clean. **M1 complete.**
 
       Also fixed a second RubyLLM load-order bug: `require "ruby_llm"`
       moved from `lib/curator.rb` to `lib/curator-rails.rb`. In the spec
@@ -152,7 +165,7 @@ spec/
 
 ## Current Work
 
-- [-] Phase 6 — End-to-end smoke
+- [x] Phase 6 — End-to-end smoke
    - System-level spec that, against a clean `spec/dummy` test DB, runs the
      generator, migrates, seeds, boots the engine, and hits
      `GET /curator` to confirm the mount responds (not a 500; 401 from the
@@ -212,10 +225,10 @@ spec/
 - [x] Running the task a second time results in no change and no error
 
 ### Phase 6 — End-to-end
-- [ ] Fresh DB + install + migrate + seed + GET `/curator` returns non-500
-- [ ] `bundle exec rspec` exits 0
-- [ ] `bundle exec rubocop` exits 0
-- [ ] Rerun of generator + migrate is a no-op (no duplicate migrations, no
+- [x] Fresh DB + install + migrate + seed + GET `/curator` returns non-500
+- [x] `bundle exec rspec` exits 0
+- [x] `bundle exec rubocop` exits 0
+- [x] Rerun of generator + migrate is a no-op (no duplicate migrations, no
       errors)
 
 ## Implementation Notes

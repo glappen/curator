@@ -1,0 +1,345 @@
+# M2 — Ingestion
+
+Extract + chunk pipeline for curator-rails: a developer calls
+`Curator.ingest(file, knowledge_base:)` or runs `curator:ingest` against a
+directory, and ends up with `curator_documents` rows whose `curator_chunks`
+children are populated and ready for embedding. No real retrieval yet (M3),
+but the full async pipeline runs end-to-end with a stub `EmbedChunksJob`
+that immediately marks documents `:complete`.
+
+**Reference**: `features/implementation.md` → "Implementation Milestones" → M2,
+plus the "Ingestion Pipeline" and "Extractor contract" sections.
+
+## Completed
+
+- [x] Phase 1 — Extractor contract + Basic extractor
+   - `Curator::Extractors::ExtractionResult` value object
+     (`content`, `mime_type`, `pages`) under `lib/curator/extractors/`.
+   - `Curator::Extractors::Basic` handling `text/plain`, `text/markdown`,
+     `text/csv`, `text/html` (HTML stripped via Nokogiri). Strict
+     whitelist; unknown MIME raises `Curator::UnsupportedMimeError`
+     pointing at `config.extractor = :kreuzberg`.
+   - `Curator::ExtractionError`, `Curator::UnsupportedMimeError`,
+     `Curator::FileTooLargeError` added to `lib/curator/errors.rb`
+     (all inherit `Curator::Error`; `UnsupportedMimeError` also inherits
+     `ExtractionError`).
+   - Shared contract spec at `spec/curator/extractors/contract.rb` plus
+     `spec/curator/extractors/basic_spec.rb`, fixtures
+     `spec/fixtures/sample.{md,csv,html,pdf}`.
+   - Full `rspec` (154 examples) + `rubocop` green.
+
+## Current Work
+
+_Phase 1 done; awaiting go-ahead on Phase 2._
+
+## Next Steps
+
+- [ ] Phase 2 — Kreuzberg adapter
+   - `kreuzberg` gem added to the engine `Gemfile` in `:development, :test`
+     group only — **not** to the gemspec. Host apps that want Kreuzberg
+     add the gem themselves.
+   - `Curator::Extractors::Kreuzberg` delegating to `::Kreuzberg.extract_file_sync`,
+     building `ExtractionResult` from `result.content`, `result.mime_type`,
+     and `result.pages`. Raises `Curator::ExtractionError` on Kreuzberg
+     failures.
+   - On first use without the gem loaded: raise with message `"Extractor :kreuzberg requires the kreuzberg gem — add `gem \"kreuzberg\"` to your Gemfile."`
+   - Contract spec runs against `Kreuzberg` when the gem is loaded, skipped
+     with a clear `pending` reason otherwise.
+- [ ] Phase 3 — Chunker
+   - `Curator::Chunkers::Paragraph` under `lib/curator/chunkers/`. Read
+     baran's source first to crib overlap math + edge-case list; write
+     ours from scratch. ~150 lines.
+   - Algorithm: greedy paragraph packing (split on `/\n\s*\n/`), pack
+     until next paragraph would exceed `chunk_size`, emit. Paragraph
+     larger than `chunk_size` → char-split at the target size. Overlap:
+     `chunk_overlap` tokens → char count via `Curator::TokenCounter` →
+     last N chars prepended to the next chunk.
+   - `chunk_size` / `chunk_overlap` passed in at construction; caller reads
+     them from `document.knowledge_base.chunk_size` /
+     `knowledge_base.chunk_overlap`.
+   - Page interaction: build a `[[char_offset, page_number], ...]` map
+     from `ExtractionResult#pages` by scanning `content`. For each emitted
+     chunk, binary-search `char_start` into the map to set `page_number`.
+     Chunks may span pages; their `page_number` is the page of the first
+     char. When `pages` is empty (Basic extractor), `page_number` is `nil`.
+- [ ] Phase 4 — `Curator.ingest` + SHA-256 dedup + stub `EmbedChunksJob`
+   - `Curator.ingest(file, knowledge_base:, title: nil, source_url: nil, metadata: {})`
+     module method under `lib/curator.rb`.
+   - File normalization: accept `String` path, `Pathname`, `File`, `IO`,
+     `ActionDispatch::Http::UploadedFile`, `ActiveStorage::Blob`.
+     Normalize to `{ bytes, filename, mime_type }` via a small
+     `Curator::FileNormalizer` helper.
+   - SHA-256 over bytes. Size check against `Curator.config.max_document_size`
+     before any DB write — oversize raises `Curator::FileTooLargeError`.
+   - Dedup: look up `(knowledge_base_id, content_hash)` on
+     `curator_documents`. On hit, return
+     `Curator::IngestResult.new(document: existing, status: :duplicate)`
+     with no side effects.
+   - On miss: create `curator_documents` row with `status: :pending`,
+     attach file via `has_one_attached :file`, enqueue
+     `IngestDocumentJob.perform_later(document)`, return
+     `IngestResult.new(document:, status: :created)`.
+   - `Curator::IngestResult` value object (`document:, status:, reason:`)
+     under `lib/curator/ingest_result.rb`.
+   - Stub `app/jobs/curator/embed_chunks_job.rb`: single
+     `def perform(document); document.update!(status: :complete); end`
+     with an inline `# TODO(M3): real embedding pipeline` comment. Full
+     body lands in M3.
+- [ ] Phase 5 — `IngestDocumentJob`
+   - `app/jobs/curator/ingest_document_job.rb` inheriting
+     `ApplicationJob` (create `app/jobs/curator/application_job.rb` too).
+   - Steps:
+     1. Update document status to `:extracting`.
+     2. Download blob to a tempfile; invoke configured extractor
+        (`Curator.config.extractor`) — `:basic` → `Curator::Extractors::Basic`,
+        `:kreuzberg` → `Curator::Extractors::Kreuzberg`.
+     3. Build chunks via `Curator::Chunkers::Paragraph` configured from
+        `document.knowledge_base.chunk_size` / `chunk_overlap`.
+     4. Insert `curator_chunks` rows (`status: :pending`, `sequence` 0..N,
+        `content_tsvector` populated by the DB generated column).
+     5. Update document status to `:embedding`; enqueue
+        `EmbedChunksJob.perform_later(document)`.
+   - Failures (any step): rescue, set `status: :failed`, populate
+     `stage_error` with the exception message + stage name, re-raise so
+     Active Job's retry/backoff policy owns final disposition. No
+     custom retry logic in M2 — host app's job adapter decides.
+- [ ] Phase 6 — `ingest_directory`, `reingest`, rake tasks
+   - `Curator.ingest_directory(path, knowledge_base:, pattern: nil, recursive: true)`:
+     walks `path`. Default glob is extractor-aware extension list,
+     recursive. `pattern:` overrides with an explicit Ruby glob
+     (`"**/*.md"`). Hidden files (leading `.`) and symlinks skipped.
+     Hands each file to `Curator.ingest`. Returns
+     `Array<Curator::IngestResult>` in walk order.
+   - `Curator.reingest(document)`: transaction — `document.chunks.destroy_all`
+     (cascade will handle embeddings post-M3), reset
+     `document.update!(status: :pending, stage_error: nil)`, enqueue
+     `IngestDocumentJob.perform_later(document)`. No re-hash; the attached
+     blob is canonical.
+   - `curator:ingest PATH=<dir> KB=<slug>` rake task — delegates to
+     `ingest_directory`, prints `created=N duplicate=M failed=K` summary
+     grouped by `IngestResult#status`, exits non-zero if any `:failed`.
+   - `curator:reingest DOCUMENT=<id>` rake task — delegates to
+     `Curator.reingest`. Exits zero if enqueued.
+- [ ] Phase 7 — End-to-end smoke
+   - Request/job-level spec that, against the `spec/dummy` test DB:
+     1. Seeds the default KB.
+     2. `Curator.ingest` on a fixture `.md` file — asserts `IngestResult#status == :created`,
+        drives jobs inline via `perform_enqueued_jobs`, asserts
+        `document.reload.status == :complete`, asserts
+        `document.chunks.count > 0` and chunks are populated.
+     3. `Curator.ingest` on the same file again — asserts
+        `IngestResult#status == :duplicate`, no new document or chunks
+        created.
+     4. `Curator.ingest` on an oversized file — asserts
+        `Curator::FileTooLargeError` raised and no row created.
+     5. `Curator.ingest` on an unsupported MIME (e.g. a `.pdf` under
+        Basic) — asserts `Curator::UnsupportedMimeError`.
+     6. `Curator.ingest_directory` on a small fixture tree — asserts
+        mixed `:created` / `:duplicate` statuses.
+     7. `Curator.reingest(doc)` — asserts chunks replaced, document
+        returns to `:complete`.
+   - **Validate**: Phase 7 checklist below, plus `bundle exec rspec` +
+     `bundle exec rubocop` both green. **M2 complete.**
+
+## Files Under Development
+
+```
+lib/
+├── curator.rb                               # augment with .ingest / .ingest_directory / .reingest
+├── curator/
+│   ├── errors.rb                            # add ExtractionError, UnsupportedMimeError, FileTooLargeError
+│   ├── ingest_result.rb                     # NEW value object
+│   ├── file_normalizer.rb                   # NEW — path/IO/Blob → { bytes, filename, mime_type }
+│   ├── token_counter.rb                     # NEW — char-based heuristic, already referenced in CLAUDE.md
+│   ├── extractors/
+│   │   ├── extraction_result.rb             # NEW value object
+│   │   ├── basic.rb                         # NEW
+│   │   └── kreuzberg.rb                     # NEW (P2)
+│   └── chunkers/
+│       └── paragraph.rb                     # NEW
+├── tasks/
+│   └── curator.rake                         # add ingest + reingest tasks
+app/
+└── jobs/curator/
+    ├── application_job.rb                   # NEW base
+    ├── ingest_document_job.rb               # NEW
+    └── embed_chunks_job.rb                  # NEW — stub in M2, real body in M3
+spec/
+├── curator/
+│   ├── extractors/
+│   │   ├── contract.rb                      # shared examples
+│   │   ├── basic_spec.rb
+│   │   └── kreuzberg_spec.rb                # tagged `:kreuzberg`, skipped if gem absent
+│   ├── chunkers/
+│   │   └── paragraph_spec.rb
+│   ├── file_normalizer_spec.rb
+│   ├── ingest_result_spec.rb
+│   └── token_counter_spec.rb
+├── jobs/curator/
+│   ├── ingest_document_job_spec.rb
+│   └── embed_chunks_job_spec.rb             # stub behavior only in M2
+├── tasks/
+│   └── curator_ingest_rake_spec.rb
+├── requests/curator/
+│   └── ingestion_smoke_spec.rb              # P7 E2E
+└── fixtures/
+    ├── sample.md
+    ├── sample.csv
+    ├── sample.html
+    ├── sample.pdf                           # for Kreuzberg (P2) and MIME-rejection (Basic)
+    └── oversized.txt                        # > max_document_size for the size-check spec
+Gemfile                                      # add kreuzberg to :development, :test (P2)
+```
+
+## Validation Strategy
+
+### Phase 1 — Extractor contract + Basic
+- [ ] `Curator::Extractors::Basic.new.extract(path_to_sample_md)` returns an
+      `ExtractionResult` with non-empty `content`, `mime_type == "text/markdown"`,
+      `pages == []`.
+- [ ] Same for `.csv`, `.html` (HTML comes back as plain text, tags
+      stripped).
+- [ ] `.pdf` input raises `Curator::UnsupportedMimeError` with a message
+      that includes `config.extractor = :kreuzberg`.
+- [ ] `ExtractionResult` is frozen; `content` / `mime_type` / `pages`
+      attr_readers present.
+
+### Phase 2 — Kreuzberg adapter
+- [ ] With `kreuzberg` loaded, `Curator::Extractors::Kreuzberg.new.extract(path_to_sample_pdf)`
+      returns an `ExtractionResult` with non-empty `content` and
+      `pages` populated.
+- [ ] With `kreuzberg` not loaded, first use raises with message pointing
+      at the Gemfile.
+- [ ] Shared contract spec runs green against both adapters.
+- [ ] `kreuzberg` appears in `Gemfile` under `:development, :test`, not
+      in the gemspec.
+
+### Phase 3 — Chunker
+- [ ] Paragraphs smaller than `chunk_size` pack into one chunk until next
+      would overflow.
+- [ ] A single paragraph larger than `chunk_size` splits at char
+      boundaries.
+- [ ] Overlap prepends ~`chunk_overlap` tokens' worth of chars from the
+      previous chunk (within ±1 token of the configured value, since
+      TokenCounter is heuristic).
+- [ ] `page_number` on each chunk matches the page the chunk's first
+      char falls on (canned `pages` fixture).
+- [ ] Empty `pages` ⇒ all chunks have `page_number == nil`.
+- [ ] `chunk_size=100, chunk_overlap=10` on a 1000-char input produces
+      a deterministic chunk count.
+
+### Phase 4 — `Curator.ingest` + dedup + stub embed job
+- [ ] `Curator.ingest(path_string, knowledge_base: kb)` returns
+      `IngestResult` with `status: :created`, document persisted,
+      Active Storage attachment present, `IngestDocumentJob` enqueued.
+- [ ] Same file ingested again in same KB: `status: :duplicate`, no new
+      document row, no job enqueued.
+- [ ] Same file ingested in a *different* KB: `status: :created`, new
+      document row.
+- [ ] File > `Curator.config.max_document_size` raises
+      `Curator::FileTooLargeError` before any DB write.
+- [ ] Normalizer accepts: path string, `Pathname`, open `File`, `IO`,
+      `ActiveStorage::Blob`. Each path has a spec example.
+- [ ] Stub `EmbedChunksJob.perform_now(doc)` marks doc `:complete`.
+
+### Phase 5 — `IngestDocumentJob`
+- [ ] On a happy-path fixture: status transitions `:pending → :extracting
+      → :embedding → :complete` (last hop via the stub job), chunks
+      persisted with monotonic `sequence`, `content_tsvector` non-null
+      (via generated column).
+- [ ] Extraction failure: document ends `:failed` with `stage_error`
+      populated; no chunks inserted.
+- [ ] Chunker failure (e.g. extractor returns empty content): document
+      ends `:failed`; chunks empty.
+- [ ] `chunk_size` / `chunk_overlap` pulled from the document's KB, not
+      from config defaults — verify by setting non-default values on
+      the KB row and asserting chunk sizes reflect them.
+
+### Phase 6 — Directory ingest + re-ingest + rake tasks
+- [ ] `ingest_directory(tmpdir, knowledge_base: kb)` with a mixed tree
+      of `.md`, `.csv`, and `.DS_Store` returns `IngestResult`s only for
+      the allowed extensions; hidden files skipped.
+- [ ] `pattern: "**/*.md"` filters correctly.
+- [ ] Second run returns all `:duplicate`.
+- [ ] `Curator.reingest(doc)` deletes old chunks and re-enqueues the
+      job; after perform, chunks are newly inserted (different IDs)
+      and doc is `:complete` again.
+- [ ] `bundle exec rake curator:ingest PATH=./spec/fixtures/tree KB=default`
+      prints `created=N duplicate=M failed=K`, exits 0 on all-success.
+- [ ] `bundle exec rake curator:reingest DOCUMENT=<id>` enqueues the
+      job and exits 0.
+
+### Phase 7 — End-to-end smoke
+- [ ] `bundle exec rspec` exits 0.
+- [ ] `bundle exec rubocop` exits 0.
+- [ ] Full smoke spec covering ingest → complete, dedup, oversize,
+      MIME reject, directory, reingest passes.
+
+## Implementation Notes
+
+**Kreuzberg soft-dep loading**: `Curator::Extractors::Kreuzberg` should
+`require "kreuzberg"` lazily inside the adapter's first method call
+(not at file load), wrapped in a rescue `LoadError` that re-raises with
+the gem-install message. Loading at top-level would crash `require
+"curator"` in any host app that doesn't use Kreuzberg.
+
+**`content_tsvector` in tests**: the column is `GENERATED ALWAYS AS`,
+so we don't set it from Ruby — AR insert writes the other columns and
+Postgres populates the tsvector. Specs reload the chunk to see the
+value. Verified in M1's schema templates.
+
+**`TokenCounter` lands here**: `Curator::TokenCounter.count(text)` is
+mentioned in `CLAUDE.md` as a char-based heuristic behind a swappable
+interface, but isn't implemented yet. P3 ships it (single method,
+~5 lines) because the chunker is the first real caller. A dedicated
+spec covers the heuristic constant + basic inputs.
+
+**`FileNormalizer` edge cases**: `ActionDispatch::Http::UploadedFile`
+exposes `.read`, `.original_filename`, `.content_type` — straightforward.
+For `IO` without a path, `filename:` kwarg on `Curator.ingest` fills the
+gap; otherwise `FileNormalizer` raises a clear error. `ActiveStorage::Blob`
+already knows its filename + checksum + byte_size — short-circuit those.
+
+**Dedup scope**: `(knowledge_base_id, content_hash)`, not global. Same
+file in two different KBs produces two documents — intentional. DB
+constraint: add `add_index :curator_documents, [:knowledge_base_id,
+:content_hash], unique: true` if not already in the M1 schema
+templates. _Check the existing migration before writing a new one;
+it may already be there._
+
+**Generated dummy schema**: editing any migration template under
+`lib/generators/curator/install/templates/` means running
+`bin/reset-dummy` to rebuild `spec/dummy/db/**` before specs see the
+change. Standing rule from M1.
+
+## Ideation Notes
+
+Captured from `/ideate` session on 2026-04-23.
+
+| # | Question | Conclusion |
+|---|---|---|
+| 1 | M2/M3 boundary for `IngestDocumentJob` | **Stub `EmbedChunksJob` in M2.** `IngestDocumentJob` enqueues it as it will forever; the M2 stub immediately marks the document `:complete` without embedding. M3 replaces the stub body. Status machine is correct from day one. |
+| 2 | Extractor scope in M2 | **Both adapters; Kreuzberg as a soft dep.** `kreuzberg` goes in curator-rails's `Gemfile` dev/test group, not the gemspec. Host apps that want it add the gem themselves. Adapter raises a clear "add `gem \"kreuzberg\"`" message if the gem isn't loaded. Contract spec runs against both. |
+| 3 | `Curator.ingest` return semantics | **Async.** Writes `curator_documents` row with `status: :pending`, attaches via Active Storage, enqueues `IngestDocumentJob`, returns immediately. Rails-idiomatic. Tests drive inline via `perform_enqueued_jobs`. |
+| 4 | `file` arg type to `Curator.ingest` | **Anything `has_one_attached` accepts**: path `String`, `Pathname`, `File`, `IO`, `ActionDispatch::Http::UploadedFile`, `ActiveStorage::Blob`. Normalize internally — read bytes, SHA-256, derive filename + mime, attach. |
+| 5 | `ingest_directory` walk rules | **Recursive by default, extension filter, explicit `pattern:` kwarg override.** Extension list is extractor-aware. Hidden files and symlinks skipped. Dedup falls through to `Curator.ingest`'s per-KB SHA-256 check. |
+| 6 | Chunker splitting + page interaction | **Greedy paragraph packing + char-level fallback; pages as metadata, not split points.** Chunks span page boundaries freely; `page_number` = the page of the chunk's first char, derived by binary-searching into a char-offset map built from `ExtractionResult#pages`. |
+| 7 | Build vs. depend on baran | **Write our own `Curator::Chunkers::Paragraph`**; read baran's source first to steal overlap math + edge-case list. Chunking is a core primitive; ~150 lines is token-native (against `Curator::TokenCounter`) and page-aware in one pass. |
+| 8 | Basic extractor format scope | **`text/plain`, `text/markdown`, `text/csv`, `text/html`** (HTML via Nokogiri text-strip, already a Rails transitive dep). PDF and docx rejected with `Curator::UnsupportedMimeError` pointing at `config.extractor = :kreuzberg`. No new runtime deps on `pdf-reader`/`docx`. |
+| 9 | Dedup surface + `ingest_directory` return | **`Curator::IngestResult` value object** (`document:, status: :created\|:duplicate\|:failed, reason:`). `Curator.ingest` and `Curator.ingest_directory` both return `IngestResult`(s). Rake task groups by `status` for summary output. No `DuplicateDocument` exception — duplicates are expected flow. |
+| 10 | Re-ingestion in M2 | **In scope.** `Curator.reingest(document)` + `curator:reingest DOCUMENT=<id>` rake task. Transactionally deletes chunks (cascade handles future embeddings), resets status to `:pending`, re-enqueues `IngestDocumentJob` against the existing attached blob. No re-hash. Needed in-house for M3/M4 chunker iteration. |
+
+Inline decisions (made without asking):
+
+- **Per-KB extractor override**: out of scope for M2; schema has no
+  per-KB extractor field. `config.extractor` is global. Revisit in v2.
+- **`config.max_document_size`** enforced in `Curator.ingest` *before*
+  any DB write; oversize raises `Curator::FileTooLargeError`.
+- **Active Job adapter**: whatever the host configures. Curator does
+  not prescribe one.
+- **Chunk size / overlap**: read from `document.knowledge_base` at job
+  time, not from globals. Per-KB values already exist in the schema.
+- **No `DuplicateDocument` exception**: dedup is expected flow; surfaced
+  as an `IngestResult#status`, not an error.
+- **Error hierarchy**: all new errors (`ExtractionError`,
+  `UnsupportedMimeError`, `FileTooLargeError`) inherit `Curator::Error`.

@@ -14,25 +14,21 @@ module Curator
     OPEN_TIMEOUT     = 10
     READ_TIMEOUT     = 30
     FALLBACK_FILENAME = "download".freeze
+    # Strip C0/C1 control chars, NULs, and path separators from filenames
+    # parsed out of attacker-controlled headers.
+    UNSAFE_FILENAME_CHARS = /[\x00-\x1f\x7f\/\\]/.freeze
 
     module_function
 
     def call(url, max_bytes:)
-      current = URI(url.to_s)
-      unless current.is_a?(URI::HTTP) || current.is_a?(URI::HTTPS)
-        raise ArgumentError,
-              "Curator.ingest_url only supports http(s) URLs (got #{url.inspect})"
-      end
+      current = ensure_http!(URI(url.to_s), context: url)
 
       (MAX_REDIRECTS + 1).times do
-        response = get(current)
+        body = nil
+        response = stream(current, max_bytes: max_bytes) { |b| body = b }
+
         case response
         when Net::HTTPSuccess
-          body = response.body.to_s
-          if body.bytesize > max_bytes
-            raise FileTooLargeError,
-                  "URL body is #{body.bytesize} bytes; max_document_size is #{max_bytes}."
-          end
           return Fetched.new(
             bytes:     body,
             filename:  filename_for(response, current),
@@ -42,7 +38,7 @@ module Curator
         when Net::HTTPRedirection
           location = response["location"] or
             raise FetchError, "redirect from #{current} missing Location header"
-          current = URI.join(current.to_s, location)
+          current = ensure_http!(URI.join(current.to_s, location), context: location)
         else
           raise FetchError,
                 "GET #{current} returned #{response.code} #{response.message}"
@@ -53,30 +49,72 @@ module Curator
       raise FetchError, "fetch failed for #{url}: #{e.class}: #{e.message}"
     end
 
-    def get(uri)
+    def ensure_http!(uri, context:)
+      unless uri.is_a?(URI::HTTP) || uri.is_a?(URI::HTTPS)
+        raise ArgumentError,
+              "Curator.ingest_url only supports http(s) URLs (got #{context.inspect})"
+      end
+      uri
+    end
+    private_class_method :ensure_http!
+
+    # Streams the response body, accumulating into a String buffer that
+    # aborts as soon as max_bytes is exceeded. For redirect responses we
+    # don't read the body — callers only need headers.
+    def stream(uri, max_bytes:)
       Net::HTTP.start(
         uri.host,
         uri.port,
         use_ssl:      uri.scheme == "https",
         open_timeout: OPEN_TIMEOUT,
         read_timeout: READ_TIMEOUT
-      ) { |http| http.request(Net::HTTP::Get.new(uri.request_uri)) }
+      ) do |http|
+        request = Net::HTTP::Get.new(uri.request_uri)
+        http.request(request) do |response|
+          if response.is_a?(Net::HTTPSuccess)
+            declared = response["content-length"]
+            if declared && declared.to_i > max_bytes
+              raise FileTooLargeError,
+                    "URL body is #{declared} bytes; max_document_size is #{max_bytes}."
+            end
+
+            buffer = String.new(capacity: 4_096)
+            response.read_body do |chunk|
+              buffer << chunk
+              if buffer.bytesize > max_bytes
+                raise FileTooLargeError,
+                      "URL body exceeded #{max_bytes} bytes mid-stream."
+              end
+            end
+            yield buffer
+          end
+          return response
+        end
+      end
     end
-    private_class_method :get
+    private_class_method :stream
 
     # RFC 6266 filename / filename* with a forgiving pattern. Handles
     # unquoted, double-quoted, and RFC 5987 (filename*=UTF-8''foo) forms.
+    # Header content is attacker-controlled — strip path separators and
+    # control chars before returning so the result is safe to pass to
+    # ActiveStorage / Marcel / File.basename downstream.
     def filename_for(response, uri)
       disp = response["content-disposition"]
       if disp && (m = disp.match(/filename\*?=(?:UTF-8'')?"?([^"';]+)"?/i))
-        name = URI.decode_www_form_component(m[1].strip)
+        name = sanitize_filename(URI.decode_www_form_component(m[1].strip))
         return name unless name.empty?
       end
-      base = File.basename(uri.path.to_s)
+      base = sanitize_filename(File.basename(uri.path.to_s))
       return base unless base.empty? || base == "/"
       FALLBACK_FILENAME
     end
     private_class_method :filename_for
+
+    def sanitize_filename(name)
+      File.basename(name.to_s.gsub(UNSAFE_FILENAME_CHARS, "")).strip
+    end
+    private_class_method :sanitize_filename
 
     def mime_for(response)
       ct = response["content-type"]

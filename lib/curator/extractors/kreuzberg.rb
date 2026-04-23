@@ -12,6 +12,24 @@ module Curator
         "Extractor :kreuzberg requires the kreuzberg gem — " \
         "add `gem \"kreuzberg\"` to your Gemfile."
 
+      OCR_BACKENDS = %i[tesseract paddle].freeze
+
+      # Canonicalize an OCR setting from one of the accepted shapes:
+      #   - false / nil   -> false (OCR off)
+      #   - true          -> :tesseract (default backend)
+      #   - :tesseract / :paddle -> the literal backend
+      # Shared by Configuration#ocr= so the validation rules live in one place.
+      def self.normalize_ocr(value)
+        case value
+        when false, nil       then false
+        when true             then :tesseract
+        when *OCR_BACKENDS    then value
+        else
+          raise ArgumentError,
+                "ocr must be one of false, true, #{OCR_BACKENDS.map(&:inspect).join(', ')} (got #{value.inspect})"
+        end
+      end
+
       # @param ocr [false, true, :tesseract, :paddle]
       #   OCR backend to use. `false` disables OCR entirely, `true` is
       #   shorthand for `:tesseract`. The chosen backend must be installed
@@ -20,7 +38,7 @@ module Curator
       # @param force_ocr [Boolean] Re-OCR pages that already carry embedded
       #   text. Useful for PDFs whose embedded text is garbage.
       def initialize(ocr: false, ocr_language: "eng", force_ocr: false)
-        @ocr          = normalize_ocr(ocr)
+        @ocr          = self.class.normalize_ocr(ocr)
         @ocr_language = ocr_language
         @force_ocr    = force_ocr
       end
@@ -46,15 +64,6 @@ module Curator
         require "kreuzberg"
       rescue LoadError
         raise ExtractionError, MISSING_GEM_MESSAGE
-      end
-
-      def normalize_ocr(value)
-        case value
-        when false, nil then false
-        when true       then :tesseract
-        when :tesseract, :paddle then value
-        else raise ArgumentError, "ocr must be one of false, true, :tesseract, :paddle (got #{value.inspect})"
-        end
       end
 
       def extract_kwargs(path)

@@ -2,6 +2,8 @@ module Curator
   class KnowledgeBase < ApplicationRecord
     self.table_name = "curator_knowledge_bases"
 
+    DEFAULT_LOCK_KEY = "curator_kb_default".freeze
+
     has_many :documents, class_name: "Curator::Document", dependent: :destroy
     has_many :searches,  class_name: "Curator::Search",   dependent: :destroy
 
@@ -31,7 +33,19 @@ module Curator
 
     private
 
+    # Serialize concurrent default-flips on a Postgres advisory lock so
+    # they can't race the partial unique index
+    # (index_curator_kb_on_single_default). The xact-scoped variant
+    # auto-releases when the surrounding save's transaction commits or
+    # rolls back. Without this, two simultaneous saves with is_default:
+    # true would both clear+set and the second would surface
+    # ActiveRecord::RecordNotUnique to callers.
     def unset_prior_default
+      self.class.connection.execute(
+        self.class.sanitize_sql_array([
+          "SELECT pg_advisory_xact_lock(hashtext(?))", DEFAULT_LOCK_KEY
+        ])
+      )
       self.class.where(is_default: true).where.not(id: id).update_all(is_default: false)
     end
   end

@@ -37,6 +37,17 @@ bin/rails db:migrate
 echo "--> Running curator:install (chains ruby_llm:install)"
 bin/rails generate curator:install --mount-at=/curator --embedding-dim=1536
 
+echo "--> Appending test-only routes for the auth concern request specs"
+cat >> config/routes.rb <<'EOF'
+
+# Test-only: stubs that exercise Curator::Authentication via real routing.
+# See spec/requests/curator/authentication_concern_spec.rb.
+Rails.application.routes.draw do
+  get "/__curator_test_admin", to: "curator_test_admin#index"
+  get "/__curator_test_api",   to: "curator_test_api#index"
+end
+EOF
+
 echo "--> Migrating and preparing test DB"
 bin/rails db:migrate
 bin/rails db:test:prepare

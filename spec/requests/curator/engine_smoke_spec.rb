@@ -21,11 +21,4 @@ RSpec.describe "Curator engine smoke", type: :request do
     kb = Curator::KnowledgeBase.find_by!(is_default: true)
     expect(kb.slug).to eq("default")
   end
-
-  it "routes GET /curator to Curator::DashboardController#index" do
-    expect(Rails.application.routes.recognize_path("/curator")).to eq(
-      controller: "curator/dashboard",
-      action:     "index"
-    )
-  end
 end

@@ -60,6 +60,14 @@ configuration, and auth plumbing that every later milestone builds on.
       `Search.chat` / `Search.message` are `optional: true` belongs_to
       into RubyLLM-owned `Chat` / `Message`. FactoryBot factories for all
       seven models under `spec/factories/`. 128 specs green, rubocop clean.
+- [x] Phase 5 — Seed task. `curator:seed_defaults` rake task in
+      `lib/tasks/curator.rake` delegates to `Curator::KnowledgeBase.seed_default!`,
+      which returns the existing default KB if one exists or creates
+      `Default` (`slug: "default"`, `is_default: true`,
+      `text-embedding-3-small` / `gpt-5-mini`; chunk/retrieval columns
+      inherit their DB defaults). Idempotent: a second invocation is a
+      no-op. Covered by model specs on `.seed_default!` and a rake-level
+      integration spec under `spec/tasks/`. 134 specs green.
 
       Also fixed a second RubyLLM load-order bug: `require "ruby_llm"`
       moved from `lib/curator.rb` to `lib/curator-rails.rb`. In the spec
@@ -144,15 +152,7 @@ spec/
 
 ## Current Work
 
-- [-] Phase 5 — Seed task
-   - Add `curator:seed_defaults` to `lib/tasks/curator.rake`.
-   - Behavior: if no KB has `is_default: true`, create one with
-     `name: "Default"`, `slug: "default"`, `is_default: true`,
-     `embedding_model: "text-embedding-3-small"`, `chat_model: "gpt-5-mini"`,
-     and the default chunk/retrieval settings from the spec.
-   - **Validate**: Phase 5 checklist below.
-
-- [ ] Phase 6 — End-to-end smoke
+- [-] Phase 6 — End-to-end smoke
    - System-level spec that, against a clean `spec/dummy` test DB, runs the
      generator, migrates, seeds, boots the engine, and hits
      `GET /curator` to confirm the mount responds (not a 500; 401 from the
@@ -207,9 +207,9 @@ spec/
       search_steps, evaluations (zero orphans)
 
 ### Phase 5 — Seed
-- [ ] Fresh DB: `bundle exec rake curator:seed_defaults` creates exactly
+- [x] Fresh DB: `bundle exec rake curator:seed_defaults` creates exactly
       one KB with `is_default: true`, `slug: "default"`
-- [ ] Running the task a second time results in no change and no error
+- [x] Running the task a second time results in no change and no error
 
 ### Phase 6 — End-to-end
 - [ ] Fresh DB + install + migrate + seed + GET `/curator` returns non-500

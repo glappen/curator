@@ -1,7 +1,12 @@
-# Rake tasks for Curator. Real tasks are added during M1+.
-#
+namespace :curator do
+  desc "Create the default Curator knowledge base if one doesn't exist"
+  task seed_defaults: :environment do
+    kb = Curator::KnowledgeBase.seed_default!
+    puts "Curator default KB ready: #{kb.slug} (id=#{kb.id})"
+  end
+end
+
 # Planned (see features/implementation.md):
-#   curator:seed_defaults
 #   curator:ingest PATH=... KB=...
 #   curator:reembed KB=...
 #   curator:reingest DOCUMENT=...

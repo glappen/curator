@@ -52,6 +52,33 @@ RSpec.describe Curator::KnowledgeBase, type: :model do
     end
   end
 
+  describe ".seed_default!" do
+    it "creates a Default KB when none has is_default: true" do
+      expect { described_class.seed_default! }.to change(described_class, :count).by(1)
+
+      kb = described_class.find_by(is_default: true)
+      expect(kb.slug).to eq("default")
+      expect(kb.name).to eq("Default")
+      expect(kb.embedding_model).to eq("text-embedding-3-small")
+      expect(kb.chat_model).to eq("gpt-5-mini")
+    end
+
+    it "is idempotent — returns the existing default without creating another" do
+      first  = described_class.seed_default!
+      second = described_class.seed_default!
+
+      expect(second).to eq(first)
+      expect(described_class.where(is_default: true).count).to eq(1)
+    end
+
+    it "returns the existing default KB even if its slug is not 'default'" do
+      existing = create(:curator_knowledge_base, slug: "support", is_default: true)
+
+      expect { described_class.seed_default! }.not_to change(described_class, :count)
+      expect(described_class.seed_default!).to eq(existing)
+    end
+  end
+
   describe "associations" do
     it "cascades destroys to documents" do
       kb = create(:curator_knowledge_base)

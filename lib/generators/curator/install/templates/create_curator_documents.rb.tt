@@ -10,7 +10,7 @@ class CreateCuratorDocuments < ActiveRecord::Migration[7.0]
       t.string  :source_url
       t.string  :content_hash, null: false
       t.string  :mime_type,    null: false
-      t.integer :byte_size,    null: false
+      t.bigint  :byte_size,    null: false
 
       t.string  :status,       null: false, default: "pending"
       t.text    :stage_error
@@ -20,7 +20,11 @@ class CreateCuratorDocuments < ActiveRecord::Migration[7.0]
       t.timestamps
     end
 
-    add_index :curator_documents, :content_hash
+    # Composite unique index makes the SHA-256 dedup race-safe. Two
+    # concurrent ingests of the same content per KB will both miss the
+    # find_by(content_hash:) lookup; one create! wins, the other raises
+    # ActiveRecord::RecordNotUnique which Curator.ingest catches.
+    add_index :curator_documents, [ :knowledge_base_id, :content_hash ], unique: true
     add_index :curator_documents, :status
   end
 end

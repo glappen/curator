@@ -6,7 +6,6 @@ module Curator
   class Configuration
     EXTRACTORS    = %i[kreuzberg basic].freeze
     TRACE_LEVELS  = %i[full summary off].freeze
-    OCR_BACKENDS  = %i[tesseract paddle].freeze
 
     attr_reader :extractor, :trace_level, :ocr
     attr_accessor :max_document_size,
@@ -28,8 +27,6 @@ module Curator
       @ocr                  = false
       @ocr_language         = "eng"
       @force_ocr            = false
-      @authenticate_admin_with = nil
-      @authenticate_api_with   = nil
     end
 
     def extractor=(value)
@@ -51,15 +48,7 @@ module Curator
     #   - `true`:             enable OCR with the default `:tesseract` backend
     #   - `:tesseract` / `:paddle`: enable OCR with a specific backend
     def ocr=(value)
-      @ocr =
-        case value
-        when false, nil then false
-        when true       then :tesseract
-        when *OCR_BACKENDS then value
-        else
-          raise ArgumentError,
-                "ocr must be one of false, true, #{OCR_BACKENDS.map(&:inspect).join(', ')} (got #{value.inspect})"
-        end
+      @ocr = Curator::Extractors::Kreuzberg.normalize_ocr(value)
     end
 
     # Dual-mode: with a block, stores the block as the admin auth hook.

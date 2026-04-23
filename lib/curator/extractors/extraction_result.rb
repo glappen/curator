@@ -7,14 +7,9 @@ module Curator
     # - `pages`     : Array of `{ page_number:, char_start:, char_end: }` hashes
     #                 mapping page boundaries into `content`. Empty for adapters
     #                 (like Basic) that don't expose page structure.
-    class ExtractionResult
-      attr_reader :content, :mime_type, :pages
-
+    ExtractionResult = Data.define(:content, :mime_type, :pages) do
       def initialize(content:, mime_type:, pages: [])
-        @content   = content
-        @mime_type = mime_type
-        @pages     = pages.freeze
-        freeze
+        super(content: content, mime_type: mime_type, pages: pages.freeze)
       end
     end
   end

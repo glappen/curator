@@ -15,7 +15,12 @@ RSpec.describe "Curator install migration templates" do
     "create_curator_documents.rb.tt"       => {
       class_name: "CreateCuratorDocuments",
       table:      "curator_documents",
-      must_have:  [ "knowledge_base", "content_hash" ]
+      must_have:  [
+        "knowledge_base",
+        "content_hash",
+        "t.bigint  :byte_size",
+        "[ :knowledge_base_id, :content_hash ], unique: true"
+      ]
     },
     "create_curator_chunks.rb.tt"          => {
       class_name: "CreateCuratorChunks",

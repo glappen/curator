@@ -12,6 +12,43 @@ plus the "Ingestion Pipeline" and "Extractor contract" sections.
 
 ## Completed
 
+- [x] Phase 3 — Chunker
+   - `Curator::TokenCounter` shipped at `lib/curator/token_counter.rb`
+     as a char-based heuristic (`CHARS_PER_TOKEN = 4`, `.count` ceils
+     `length / 4.0`). Swappable behind the module method when a real
+     tokenizer is wanted later.
+   - `Curator::Chunkers::Paragraph` at `lib/curator/chunkers/paragraph.rb`.
+     Greedy paragraph packing (split on `/\n\s*\n/`) with whitespace-only
+     paragraph filtering, char-level fallback for single paragraphs that
+     exceed the effective budget, and token-measured packing via
+     `TokenCounter`.
+   - **Packing budgets against `chunk_size - chunk_overlap`, not
+     `chunk_size`.** The original pass used `chunk_size` and then layered
+     overlap on top, which let every non-first chunk exceed the budget
+     by up to `chunk_overlap` tokens (verified against a Kreuzberg PDF
+     extraction with near-limit paragraphs). Budgeting against the
+     effective size guarantees every chunk — including after the overlap
+     prepend — is `<= chunk_size` tokens. Covered by a regression spec.
+   - Overlap applied as a post-pack pass: last `chunk_overlap * CHARS_PER_TOKEN`
+     chars of the prior chunk's content prepended to the next chunk's content.
+     `char_start` / `char_end` track the source region the chunk's *new*
+     (non-overlap) content covers; overlap is purely text-level.
+   - **Whitespace-aware snapping** on both char-split boundaries and
+     overlap-prefix starts: the nominal cut point is snapped to the
+     nearest whitespace within a tolerance window (20% of the target,
+     capped at 64 chars) so slices don't end mid-word and overlap
+     prefixes don't begin mid-word. If no whitespace exists in-window
+     (e.g. a run of non-prose chars, a long base64 blob) the exact char
+     boundary is kept, so whitespace-free inputs stay deterministic.
+   - Page metadata consumed by scanning `ExtractionResult#pages` into a
+     `[[char_offset, page_number], ...]` map, then binary-searching each
+     chunk's `char_start` to set `page_number`. Empty `pages` → every
+     chunk's `page_number == nil` (Basic extractor path).
+   - Chunker returns `Array<Hash>` with `content`, `token_count`,
+     `char_start`, `char_end`, `page_number`. `sequence` is assigned by
+     the caller (Phase 5's `IngestDocumentJob`).
+   - Full `rspec` (203 examples) + `rubocop` green.
+
 - [x] Phase 2 — Kreuzberg adapter
    - `gem "kreuzberg"` added to `Gemfile` under `:development, :test`
      only (verified by a regression spec that also asserts the gemspec
@@ -58,27 +95,10 @@ plus the "Ingestion Pipeline" and "Extractor contract" sections.
 
 ## Current Work
 
-_Phase 2 done; awaiting go-ahead on Phase 3._
+_Phase 3 done; awaiting go-ahead on Phase 4._
 
 ## Next Steps
 
-- [ ] Phase 3 — Chunker
-   - `Curator::Chunkers::Paragraph` under `lib/curator/chunkers/`. Read
-     baran's source first to crib overlap math + edge-case list; write
-     ours from scratch. ~150 lines.
-   - Algorithm: greedy paragraph packing (split on `/\n\s*\n/`), pack
-     until next paragraph would exceed `chunk_size`, emit. Paragraph
-     larger than `chunk_size` → char-split at the target size. Overlap:
-     `chunk_overlap` tokens → char count via `Curator::TokenCounter` →
-     last N chars prepended to the next chunk.
-   - `chunk_size` / `chunk_overlap` passed in at construction; caller reads
-     them from `document.knowledge_base.chunk_size` /
-     `knowledge_base.chunk_overlap`.
-   - Page interaction: build a `[[char_offset, page_number], ...]` map
-     from `ExtractionResult#pages` by scanning `content`. For each emitted
-     chunk, binary-search `char_start` into the map to set `page_number`.
-     Chunks may span pages; their `page_number` is the page of the first
-     char. When `pages` is empty (Basic extractor), `page_number` is `nil`.
 - [ ] Phase 4 — `Curator.ingest` + SHA-256 dedup + stub `EmbedChunksJob`
    - `Curator.ingest(file, knowledge_base:, title: nil, source_url: nil, metadata: {})`
      module method under `lib/curator.rb`.

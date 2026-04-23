@@ -80,9 +80,27 @@ Run both, in order. Do not mark work complete until both pass.
 2. `bundle exec rubocop` — must end with "no offenses detected".
 
 If specs fail or rubocop reports offenses, fix the underlying issue — do
-not suppress warnings or skip tests. If touching migrations, update
-`spec/dummy/db/schema.rb` via `cd spec/dummy && bin/rails db:prepare`
-before rerunning specs.
+not suppress warnings or skip tests.
+
+## Migration templates and the dummy app
+
+Source of truth for schema is `lib/generators/curator/install/templates/*.rb.tt`.
+The generated dummy output — `spec/dummy/db/**`, ruby_llm model files,
+curator + ruby_llm initializers — is **gitignored pre-v1**. Contributors
+regenerate the dummy locally via `bin/reset-dummy` (required on first
+clone before `rspec` can run, and again after editing any template).
+
+**If you edit a migration template**, re-running `rails g curator:install`
+against the already-installed dummy is a no-op — `migration_template`
+dedupes by class name. `bin/reset-dummy` handles the wipe + regenerate.
+
+**Post-v1** this shortcut stops working for host apps: once the gem ships,
+a migration in a user's `db/migrate/` is frozen (standard Rails
+immutability). Schema changes after v1 must ship as *additional* migration
+templates (`add_foo_to_curator_...rb.tt`), not edits to existing ones.
+At that point we'll also start committing the dummy output — templates
+will have stabilized, diff churn goes away, and having a golden
+"freshly installed host app" in-repo has real review value.
 
 ## Other development notes
 

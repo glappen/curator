@@ -1,3 +1,3 @@
 Rails.application.routes.draw do
-  mount Curator::Engine => "/curator"
+  mount Curator::Engine, at: "/curator"
 end

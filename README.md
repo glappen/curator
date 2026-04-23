@@ -25,6 +25,57 @@ rails generate curator:install
 rails db:migrate
 ```
 
+### Optional dependencies
+
+Curator ships with two extraction backends — host apps pick one via
+`config.extractor`.
+
+- **`:basic`** (default in v1 host apps) — dependency-free. Handles
+  `text/plain`, `text/markdown`, `text/csv`, and `text/html` (HTML
+  stripped via Nokogiri). Anything else raises
+  `Curator::UnsupportedMimeError`.
+
+- **`:kreuzberg`** — PDF, Office, RTF, EPUB, images, and 50+ other
+  formats via the [`kreuzberg`](https://rubygems.org/gems/kreuzberg)
+  gem. Kreuzberg is *not* declared in `curator-rails.gemspec`; opt in
+  by adding it to your `Gemfile`:
+
+  ```ruby
+  gem "kreuzberg"
+  ```
+
+  Then:
+
+  ```ruby
+  Curator.configure { |c| c.extractor = :kreuzberg }
+  ```
+
+#### OCR (Kreuzberg only)
+
+By default Kreuzberg extracts **embedded** text only — text rendered as
+images (scanned PDFs, photos, images in slides) will be skipped. Enable
+OCR with:
+
+```ruby
+Curator.configure do |c|
+  c.extractor    = :kreuzberg
+  c.ocr          = :tesseract   # or `true` (shorthand) or :paddle
+  c.ocr_language = "eng"        # tesseract/paddle lang code
+  c.force_ocr    = false        # true = re-OCR pages that already have text
+end
+```
+
+The OCR engine itself is a system dependency that curator-rails does
+not ship:
+
+- **Tesseract** — install via your package manager.
+  Arch: `sudo pacman -S tesseract tesseract-data-eng`.
+  Debian/Ubuntu: `sudo apt install tesseract-ocr tesseract-ocr-eng`.
+  macOS: `brew install tesseract` (add language packs as needed).
+- **PaddleOCR** — see the
+  [Kreuzberg docs](https://kreuzberg.dev) for PaddleOCR setup; heavier
+  install, stronger on CJK languages.
+
 ## Usage (planned)
 
 ```ruby

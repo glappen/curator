@@ -2,7 +2,9 @@ module Curator
   class KnowledgeBase < ApplicationRecord
     self.table_name = "curator_knowledge_bases"
 
-    DEFAULT_LOCK_KEY = "curator_kb_default".freeze
+    DEFAULT_LOCK_KEY        = "curator_kb_default".freeze
+    DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small".freeze
+    DEFAULT_CHAT_MODEL      = "gpt-5-mini".freeze
 
     has_many :documents, class_name: "Curator::Document", dependent: :destroy
     has_many :searches,  class_name: "Curator::Search",   dependent: :destroy
@@ -35,11 +37,11 @@ module Curator
     def self.seed_default!
       with_default_lock do
         find_by(is_default: true) || create!(
-          name: "Default",
-          slug: "default",
-          is_default: true,
-          embedding_model: "text-embedding-3-small",
-          chat_model: "gpt-5-mini"
+          name:            "Default",
+          slug:            "default",
+          is_default:      true,
+          embedding_model: DEFAULT_EMBEDDING_MODEL,
+          chat_model:      DEFAULT_CHAT_MODEL
         )
       end
     rescue ActiveRecord::RecordNotUnique

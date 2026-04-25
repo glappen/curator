@@ -12,6 +12,8 @@ class CreateCuratorEmbeddings < ActiveRecord::Migration[7.0]
       t.datetime :created_at, null: false
     end
 
+    add_index :curator_embeddings, :chunk_id, unique: true
+
     # HNSW index for cosine similarity. Neighbor gem queries will hit this.
     execute <<~SQL
       CREATE INDEX index_curator_embeddings_on_embedding_hnsw

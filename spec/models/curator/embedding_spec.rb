@@ -7,6 +7,15 @@ RSpec.describe Curator::Embedding, type: :model do
       expect(e).not_to be_valid
       expect(e.errors.attribute_names).to include(:embedding_model)
     end
+
+    it "allows only one embedding per chunk" do
+      chunk = create(:curator_chunk)
+      create(:curator_embedding, chunk: chunk)
+
+      dup = build(:curator_embedding, chunk: chunk)
+      expect(dup).not_to be_valid
+      expect(dup.errors[:chunk_id]).to include("has already been taken")
+    end
   end
 
   describe "nearest_neighbors" do

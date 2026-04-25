@@ -1,6 +1,11 @@
 require "rails_helper"
 
 RSpec.describe Curator::UrlFetcher do
+  before do
+    allow(Resolv).to receive(:getaddresses).and_call_original
+    allow(Resolv).to receive(:getaddresses).with("example.com").and_return([ "93.184.216.34" ])
+  end
+
   describe ".call" do
     it "returns bytes, filename, mime_type, and final_url on 200" do
       stub_request(:get, "https://example.com/doc.md")
@@ -81,6 +86,25 @@ RSpec.describe Curator::UrlFetcher do
       expect {
         described_class.call("file:///etc/passwd", max_bytes: 1_000)
       }.to raise_error(ArgumentError, /http\(s\)/)
+    end
+
+    it "rejects loopback and private-network targets" do
+      expect {
+        described_class.call("http://127.0.0.1/secret", max_bytes: 1_000)
+      }.to raise_error(Curator::FetchError, /blocked network range/)
+
+      expect {
+        described_class.call("http://169.254.169.254/latest/meta-data", max_bytes: 1_000)
+      }.to raise_error(Curator::FetchError, /blocked network range/)
+    end
+
+    it "rejects redirects into blocked network ranges" do
+      stub_request(:get, "https://example.com/redir")
+        .to_return(status: 302, headers: { "Location" => "http://127.0.0.1/secret" })
+
+      expect {
+        described_class.call("https://example.com/redir", max_bytes: 1_000)
+      }.to raise_error(Curator::FetchError, /blocked network range/)
     end
 
     it "wraps socket-level errors as FetchError" do

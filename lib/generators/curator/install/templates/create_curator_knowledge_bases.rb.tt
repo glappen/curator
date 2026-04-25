@@ -26,5 +26,8 @@ class CreateCuratorKnowledgeBases < ActiveRecord::Migration[7.0]
               unique: true,
               where: "is_default = true",
               name:  "index_curator_kb_on_single_default"
+    add_check_constraint :curator_knowledge_bases,
+                         "chunk_overlap < chunk_size",
+                         name: "curator_kb_chunk_overlap_lt_chunk_size"
   end
 end

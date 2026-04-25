@@ -74,6 +74,23 @@ RSpec.describe Curator::IngestDocumentJob, type: :job do
     expect(sequences).to eq((0...sequences.length).to_a)
   end
 
+  it "populates content_tsvector for each persisted chunk (generated column)" do
+    described_class.perform_now(document.id)
+
+    tsvectors = document.chunks.pluck(:content_tsvector)
+    expect(tsvectors).to all(be_present)
+    expect(tsvectors.first).to match(/paragraph/)
+  end
+
+  it "drives the chunker with the knowledge base's chunk_size and chunk_overlap, not config defaults" do
+    expect(Curator::Chunkers::Paragraph)
+      .to receive(:new)
+      .with(chunk_size: kb.chunk_size, chunk_overlap: kb.chunk_overlap)
+      .and_call_original
+
+    described_class.perform_now(document.id)
+  end
+
   it "marks the document :failed and records stage_error when the extractor raises" do
     allow_any_instance_of(Curator::Extractors::Basic)
       .to receive(:extract).and_raise(Curator::ExtractionError, "boom")

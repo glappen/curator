@@ -1,4 +1,5 @@
 require "digest"
+require "pathname"
 
 require "curator/version"
 require "curator/errors"
@@ -77,10 +78,112 @@ module Curator
       )
     end
 
+    # Walk a directory tree and hand each matching file to `Curator.ingest`.
+    #
+    # Default glob is extractor-aware (driven by the configured extractor's
+    # EXTENSIONS list). Callers can override with an explicit `pattern:`
+    # like `"**/*.md"` or `"reports/*.pdf"`. Hidden files (any path
+    # component starting with `.`), symlinks, and directories are skipped.
+    #
+    # Per-file `Curator.ingest` errors do **not** abort the walk — they're
+    # caught and surfaced as `IngestResult(status: :failed)` so the caller
+    # (and the rake task) can summarize across the whole tree.
+    #
+    # Walk is sequential and `Curator.ingest` is itself async — each
+    # match enqueues an `IngestDocumentJob` and returns immediately.
+    # Throughput is bounded by the host's Active Job adapter (Sidekiq
+    # concurrency, Solid Queue threads, etc.), not by this method.
+    #
+    # @return [Array<Curator::IngestResult>] in walk order.
+    def ingest_directory(path, knowledge_base: nil, pattern: nil, recursive: true)
+      # File.expand_path handles `~`, `~user`, and resolves relative
+      # paths against CWD — Pathname.new doesn't do tilde expansion on
+      # its own, so a bare `Pathname.new("~/pdfs").directory?` is false
+      # even when the directory exists.
+      base = Pathname.new(File.expand_path(path.to_s))
+      raise ArgumentError, "ingest_directory: #{base} is not a directory" unless base.directory?
+
+      kb            = resolve_knowledge_base(knowledge_base)
+      glob_patterns = directory_glob_patterns(pattern, recursive)
+
+      files_to_ingest(base, glob_patterns).map { |fp| ingest_one_for_directory(fp, kb) }
+    end
+
+    # Re-run extraction + chunking for an existing document. Uses the
+    # blob already attached to the document; no re-hash, no re-fetch.
+    # The chunks (and any embeddings via DB cascade in M3+) are deleted
+    # transactionally before the doc flips back to :pending and the job
+    # is re-enqueued.
+    def reingest(document)
+      ActiveRecord::Base.transaction do
+        document.chunks.destroy_all
+        document.update!(status: :pending, stage_error: nil)
+      end
+      IngestDocumentJob.perform_later(document.id)
+      document
+    end
+
     private
 
     def url_string?(input)
       input.is_a?(String) && input.match?(URL_PATTERN)
+    end
+
+    def directory_glob_patterns(pattern, recursive)
+      return Array(pattern) if pattern
+
+      exts     = configured_extractor_extensions
+      brace    = "{#{exts.map { |e| e.delete_prefix('.') }.join(',')}}"
+      relative = recursive ? "**/*.#{brace}" : "*.#{brace}"
+      [ relative ]
+    end
+
+    def configured_extractor_extensions
+      case config.extractor
+      when :basic     then Extractors::Basic::EXTENSIONS
+      when :kreuzberg then Extractors::Kreuzberg::EXTENSIONS
+      else
+        raise ConfigurationError,
+              "unsupported extractor #{config.extractor.inspect}; expected :basic or :kreuzberg"
+      end
+    end
+
+    # Materialize the list once so we can dedupe (a path that matches
+    # multiple patterns shouldn't be ingested twice) and enforce a stable
+    # walk order. Filtering against `base` lets us reject hidden segments
+    # in the *relative* path even when `base` itself happens to live under
+    # a dotted directory (e.g. /tmp/.cache/...).
+    def files_to_ingest(base, glob_patterns)
+      candidates = glob_patterns.flat_map do |pat|
+        Dir.glob(pat, File::FNM_CASEFOLD, base: base.to_s)
+      end
+      candidates
+        .uniq
+        .sort
+        .map { |rel| base.join(rel) }
+        .reject { |p| ingest_skip?(p, base) }
+    end
+
+    def ingest_skip?(path, base)
+      return true unless path.file?
+      return true if path.symlink?
+      relative_segments = path.relative_path_from(base).each_filename.to_a
+      relative_segments.any? { |seg| seg.start_with?(".") }
+    end
+
+    def ingest_one_for_directory(file_path, kb)
+      ingest(file_path.to_s, knowledge_base: kb)
+    rescue Curator::Error, ActiveRecord::RecordInvalid => e
+      # Per-file failures we can keep walking past: bad MIME, oversized
+      # blob, extractor barfing on one file, validation collision on this
+      # row. Anything outside this list (DB connection drop, ENOSPC, OOM,
+      # programming errors) propagates and aborts the walk — masking
+      # those as N "failed" entries would hide real outages.
+      IngestResult.new(
+        document: nil,
+        status:   :failed,
+        reason:   "#{e.class}: #{e.message}"
+      )
     end
 
     def ingest_from_file(file, knowledge_base:, title:, source_url:, metadata:, filename:)

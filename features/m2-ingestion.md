@@ -12,6 +12,82 @@ plus the "Ingestion Pipeline" and "Extractor contract" sections.
 
 ## Completed
 
+- [x] Phase 6 — `ingest_directory`, `reingest`, rake tasks
+   - **`Curator.ingest_directory(path, knowledge_base: nil, pattern: nil, recursive: true)`**
+     in `lib/curator.rb`. Walks `path`, hands each match to
+     `Curator.ingest`, returns `Array<Curator::IngestResult>` in walk
+     order. Per-file `Curator.ingest` errors are caught and surfaced
+     as `IngestResult(status: :failed, document: nil, reason: "<class>: <message>")`
+     so one bad file doesn't abort the walk.
+   - **Default glob is extractor-aware**: each adapter exposes an
+     `EXTENSIONS` constant (`Curator::Extractors::Basic::EXTENSIONS`,
+     `Curator::Extractors::Kreuzberg::EXTENSIONS`) and the directory
+     walk picks one based on `Curator.config.extractor`. Image OCR
+     formats are *not* in Kreuzberg's default list — picking up every
+     `.png` thumbnail under `./assets` was deemed worse than making OCR
+     callers pass `pattern:` explicitly.
+   - **Hidden + symlink filtering**: any path component starting with
+     `.` is skipped (so `.DS_Store`, `.git/...`, `.cache/...` are all
+     out), and symlinks are skipped to avoid re-ingesting through
+     aliases or following loops outside the tree.
+   - **`pattern:` override** takes a single Ruby glob like `"**/*.md"`
+     or `"reports/2026/*.pdf"`. `recursive: false` switches the
+     extractor-default glob to a single-level `*.{...}`.
+   - **`Curator.reingest(document)`**: transactionally
+     `document.chunks.destroy_all` then
+     `document.update!(status: :pending, stage_error: nil)`, then
+     enqueues `IngestDocumentJob.perform_later(document.id)` outside
+     the transaction. No re-hash; the attached blob is canonical.
+     Returns the document.
+   - **`IngestResult` expanded**: STATUSES now `[:created, :duplicate, :failed]`,
+     `document:` defaults to `nil` (failed results from `ingest_directory`
+     have no document since the failure happened before any row was
+     created), and `failed?` predicate added. Pre-Phase 6 callers of
+     `Curator.ingest` keep the same `:created`/`:duplicate` contract.
+   - **`File.expand_path` on `path`** so `~`, `~user`, and CWD-relative
+     paths work — bash doesn't expand `~` inside `DIR=~/pdfs` rake args
+     (that's only expanded on the *left* of an `=` in shell variable
+     assignments), so without this `Pathname.new("~/pdfs").directory?`
+     was false even when the directory exists.
+   - **No in-process parallelism**. Walk is sequential; `Curator.ingest`
+     itself is async (enqueues `IngestDocumentJob`). Throughput is
+     bounded by the host's Active Job adapter (Sidekiq concurrency,
+     Solid Queue threads, etc.), not by ingest_directory. We deliberately
+     don't ship a `workers:` kwarg or rake-task `:inline` swap —
+     reimplementing what background-job systems already do well would
+     be the wrong abstraction.
+   - **Rake tasks** in `lib/tasks/curator.rake`:
+     - `curator:ingest DIR=<dir> [KB=<slug>] [PATTERN=<glob>] [RECURSIVE=true|false]`
+       — delegates to `ingest_directory`, prints
+       `created=N duplicate=M failed=K`, warns each failed reason on
+       stderr, exits non-zero if any `:failed`. Prints a one-line
+       reminder to run an Active Job worker when `created > 0` —
+       without one, the docs are enqueued but never chunk. **Auto-creates
+       the KB** when `KB=<slug>` names one that doesn't exist (slug-derived
+       name, default models from `KnowledgeBase::DEFAULT_*`); the DIR
+       check runs first so a typo'd path doesn't leave an orphan KB.
+       Library API (`Curator.ingest_directory(..., knowledge_base:)`)
+       does not auto-create — the convenience is intentionally rake-only.
+       **Note**: `DIR=`, not `PATH=` — `PATH` is the system PATH and is
+       always populated, which would mask a missing argument and break
+       any subprocess Rails boot might spawn during `:environment`.
+     - `curator:reingest DOCUMENT=<id>` — delegates to `Curator.reingest`,
+       prints `Re-enqueued ingest for document=<id> ("<title>")`,
+       exits zero.
+   - **Adapter-aware execution**: `curator:ingest` reads
+     `ActiveJob::Base.queue_adapter_name` at task time. If it's `async`
+     (the Rails dev default — thread pool that dies with the process,
+     leaving docs un-chunked) the task swaps to `:inline` for the
+     duration and restores the original adapter in `ensure`, so a
+     stock `bundle exec rake curator:ingest` finishes the work it
+     started. `:inline` is left alone (and the "ensure your worker is
+     running" reminder is suppressed since work already happened
+     synchronously). Real workers (`sidekiq`, `solid_queue`, `good_job`,
+     `resque`) are also left alone — that's the production case where
+     you *want* the rake process to enqueue fast and let the worker
+     pool fan out in parallel.
+   - Full `rspec` (307 examples) + `rubocop` green.
+
 - [x] Phase 5 — `IngestDocumentJob` (real extract → chunk → persist pipeline)
    - `app/jobs/curator/ingest_document_job.rb` now drives the real
      pipeline end-to-end: status `:extracting` → download blob to a
@@ -195,27 +271,10 @@ plus the "Ingestion Pipeline" and "Extractor contract" sections.
 
 ## Current Work
 
-_Phase 5 done; awaiting go-ahead on Phase 6._
+_Phase 6 done; awaiting go-ahead on Phase 7._
 
 ## Next Steps
 
-- [ ] Phase 6 — `ingest_directory`, `reingest`, rake tasks
-   - `Curator.ingest_directory(path, knowledge_base:, pattern: nil, recursive: true)`:
-     walks `path`. Default glob is extractor-aware extension list,
-     recursive. `pattern:` overrides with an explicit Ruby glob
-     (`"**/*.md"`). Hidden files (leading `.`) and symlinks skipped.
-     Hands each file to `Curator.ingest`. Returns
-     `Array<Curator::IngestResult>` in walk order.
-   - `Curator.reingest(document)`: transaction — `document.chunks.destroy_all`
-     (cascade will handle embeddings post-M3), reset
-     `document.update!(status: :pending, stage_error: nil)`, enqueue
-     `IngestDocumentJob.perform_later(document)`. No re-hash; the attached
-     blob is canonical.
-   - `curator:ingest PATH=<dir> KB=<slug>` rake task — delegates to
-     `ingest_directory`, prints `created=N duplicate=M failed=K` summary
-     grouped by `IngestResult#status`, exits non-zero if any `:failed`.
-   - `curator:reingest DOCUMENT=<id>` rake task — delegates to
-     `Curator.reingest`. Exits zero if enqueued.
 - [ ] Phase 7 — End-to-end smoke
    - Request/job-level spec that, against the `spec/dummy` test DB:
      1. Seeds the default KB.

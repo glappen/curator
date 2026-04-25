@@ -1,11 +1,15 @@
 module Curator
-  # Return value from Curator.ingest. Binary outcome on the happy path
-  # (:created vs :duplicate); :reason is a free-form string reserved for
-  # callers that want to explain the outcome (e.g. which hash matched).
+  # Return value from Curator.ingest and Curator.ingest_directory.
+  # `:created` / `:duplicate` are the happy paths from a single-file
+  # ingest; `:failed` only surfaces from the per-file rescue inside
+  # `ingest_directory`, so a directory walk can keep going after one bad
+  # file. `:reason` is a free-form string ("ExtractionError: empty file")
+  # used by the rake task summary; `:document` is nil when the failure
+  # happened before any row was created.
   IngestResult = Data.define(:document, :status, :reason) do
-    STATUSES = %i[created duplicate].freeze
+    STATUSES = %i[created duplicate failed].freeze
 
-    def initialize(document:, status:, reason: nil)
+    def initialize(document: nil, status:, reason: nil)
       unless STATUSES.include?(status)
         raise ArgumentError,
               "IngestResult status must be one of #{STATUSES.inspect} (got #{status.inspect})"
@@ -15,5 +19,6 @@ module Curator
 
     def created?   = status == :created
     def duplicate? = status == :duplicate
+    def failed?    = status == :failed
   end
 end

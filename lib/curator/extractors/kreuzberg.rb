@@ -14,6 +14,25 @@ module Curator
 
       OCR_BACKENDS = %i[tesseract paddle].freeze
 
+      # File extensions ingest_directory's default glob will pick up when
+      # the configured extractor is :kreuzberg. Covers the common document,
+      # spreadsheet, and presentation formats Kreuzberg can read; image
+      # OCR formats are intentionally excluded from the default to avoid
+      # accidentally pulling thumbnails / icons into a KB. Callers who
+      # want OCR'd images explicitly can pass `pattern: "**/*.png"` etc.
+      EXTENSIONS = %w[
+        .txt .md .markdown
+        .csv .tsv
+        .html .htm .xhtml
+        .pdf .epub .rtf
+        .doc .docx
+        .ppt .pptx
+        .xls .xlsx
+        .odt .ods .odp
+        .json .xml .yaml .yml
+        .eml .msg
+      ].freeze
+
       # Canonicalize an OCR setting from one of the accepted shapes:
       #   - false / nil   -> false (OCR off)
       #   - true          -> :tesseract (default backend)

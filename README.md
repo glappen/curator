@@ -97,6 +97,47 @@ Curator.ingest(file, knowledge_base: :support, title: "Refund Policy")
 Curator.ingest_directory("./docs", knowledge_base: :support)
 ```
 
+### Ingestion is asynchronous
+
+`Curator.ingest` and `Curator.ingest_directory` create the document row(s)
+and enqueue a `Curator::IngestDocumentJob` per document. Extraction,
+chunking, and embedding then happen in your **Active Job worker** —
+Curator does not run them in the calling process, and does not ship its
+own thread pool. Throughput is bounded by your queue adapter
+(Sidekiq concurrency, Solid Queue threads, GoodJob workers).
+
+For bulk loads from the command line:
+
+```bash
+bundle exec rake curator:ingest DIR=./docs KB=support
+# DIR is required. Optional: KB=<slug>, PATTERN=<glob>, RECURSIVE=true|false
+```
+
+Prints a `created=N duplicate=M failed=K` summary and exits non-zero if
+any file failed.
+
+If `KB=<slug>` names a knowledge base that doesn't exist yet, the rake
+task creates it (with the slug-derived name and the same default models
+as `seed_default!`) before ingesting — no separate seed step needed.
+Library callers (`Curator.ingest_directory(..., knowledge_base: "foo")`)
+still need to set up the KB explicitly; the convenience is rake-only.
+
+> **Heads up — development.** The default Active Job adapter in
+> development is `:async`, which runs jobs on an in-process thread pool
+> that dies when the rake process exits. To keep `curator:ingest` from
+> silently leaving documents un-chunked, the task detects `:async` and
+> swaps to `:inline` for its duration so jobs complete before exit.
+> `:inline` and real worker adapters (Sidekiq, Solid Queue, GoodJob,
+> Resque) are left alone — in production you want the rake process to
+> enqueue fast and let the worker pool fan out in parallel.
+
+To re-extract and re-chunk an existing document (e.g. after changing
+the extractor or chunker config):
+
+```bash
+bundle exec rake curator:reingest DOCUMENT=42
+```
+
 ## License
 
 Released under the [MIT License](MIT-LICENSE).

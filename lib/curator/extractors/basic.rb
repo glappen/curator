@@ -15,6 +15,10 @@ module Curator
         text/html
       ].freeze
 
+      # File extensions ingest_directory's default glob will pick up when
+      # the configured extractor is :basic. Lowercase, with leading dot.
+      EXTENSIONS = %w[.txt .md .markdown .csv .html .htm].freeze
+
       # Dispatches by mime_type rather than file extension: ActiveStorage
       # tempfile paths and URL fetches don't always carry a meaningful
       # extension, but the document already has a Marcel-derived mime_type

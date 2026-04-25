@@ -22,6 +22,16 @@ module Curator
 
     before_save :unset_prior_default, if: -> { is_default? && is_default_changed? }
 
+    def self.default
+      find_by(is_default: true)
+    end
+
+    def self.default!
+      default || raise(ActiveRecord::RecordNotFound,
+                       "no default Curator::KnowledgeBase exists — " \
+                       "run Curator::KnowledgeBase.seed_default! or pass `knowledge_base:` explicitly")
+    end
+
     def self.seed_default!
       with_default_lock do
         find_by(is_default: true) || create!(

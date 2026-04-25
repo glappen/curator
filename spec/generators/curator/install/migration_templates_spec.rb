@@ -30,7 +30,7 @@ RSpec.describe "Curator install migration templates" do
     "create_curator_embeddings.rb.tt"      => {
       class_name: "CreateCuratorEmbeddings",
       table:      "curator_embeddings",
-      must_have:  [ "vector(1536)", "USING hnsw" ]
+      must_have:  [ "vector(1536)", "USING hnsw", "index: { unique: true" ]
     },
     "create_curator_searches.rb.tt"        => {
       class_name: "CreateCuratorSearches",
@@ -91,6 +91,25 @@ RSpec.describe "Curator install migration templates" do
           expect(rendered).to include(fragment)
         end
       end
+    end
+  end
+
+  # Regression guard for a duplicate-index bug where t.references :chunk
+  # (which already creates index_curator_embeddings_on_chunk_id) was paired
+  # with a separate add_index on the same column, blowing up db:migrate
+  # with PG::DuplicateTable.
+  describe "create_curator_embeddings.rb.tt" do
+    let(:rendered) do
+      ERB.new(templates_dir.join("create_curator_embeddings.rb.tt").read, trim_mode: "-")
+         .result(render_context.instance_eval { binding })
+    end
+
+    it "declares the chunk_id index exactly once" do
+      expect(rendered.scan(/index_curator_embeddings_on_chunk_id/).length).to eq(1)
+    end
+
+    it "does not pair t.references with a redundant add_index on chunk_id" do
+      expect(rendered).not_to match(/add_index\s+:curator_embeddings,\s+:chunk_id/)
     end
   end
 end

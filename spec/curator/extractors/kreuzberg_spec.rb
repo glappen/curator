@@ -16,18 +16,22 @@ RSpec.describe Curator::Extractors::Kreuzberg do
   end
 
   describe "#extract" do
-    it "passes path-only kwargs to kreuzberg when OCR is disabled (default)" do
+    it "always passes a config requesting page extraction so chunks can carry page numbers" do
       allow(::Kreuzberg).to receive(:extract_file_sync).and_return(
         double(content: "", mime_type: "text/plain", pages: nil)
       )
-      extractor.extract("x.txt")
-      expect(::Kreuzberg).to have_received(:extract_file_sync).with(path: "x.txt")
+      extractor.extract("x.txt", mime_type: "text/plain")
+      expect(::Kreuzberg).to have_received(:extract_file_sync) do |path:, config:|
+        expect(path).to eq("x.txt")
+        expect(config).to be_a(::Kreuzberg::Config::Extraction)
+        expect(config.pages.extract_pages).to be(true)
+      end
     end
 
     it "wraps low-level kreuzberg failures as Curator::ExtractionError" do
       allow(::Kreuzberg).to receive(:extract_file_sync).and_raise(RuntimeError, "boom")
       expect {
-        extractor.extract("irrelevant.pdf")
+        extractor.extract("irrelevant.pdf", mime_type: "application/pdf")
       }.to raise_error(Curator::ExtractionError, /Kreuzberg extraction failed.*boom/)
     end
 
@@ -44,7 +48,7 @@ RSpec.describe Curator::Extractors::Kreuzberg do
       )
       allow(::Kreuzberg).to receive(:extract_file_sync).and_return(fake_result)
 
-      result = extractor.extract("multi-page.pdf")
+      result = extractor.extract("multi-page.pdf", mime_type: "application/pdf")
       expect(result).to be_a(Curator::Extractors::ExtractionResult)
       expect(result.mime_type).to eq("application/pdf")
       expect(result.pages).to eq([
@@ -61,14 +65,14 @@ RSpec.describe Curator::Extractors::Kreuzberg do
         pages: nil
       )
       allow(::Kreuzberg).to receive(:extract_file_sync).and_return(fake_result)
-      expect(extractor.extract("x.md").pages).to eq([])
+      expect(extractor.extract("x.md", mime_type: "text/markdown").pages).to eq([])
     end
 
     it "raises ExtractionError pointing at the Gemfile when kreuzberg isn't available" do
       hide_const("::Kreuzberg")
       allow(extractor).to receive(:require).with("kreuzberg").and_raise(LoadError)
       expect {
-        extractor.extract("anything.pdf")
+        extractor.extract("anything.pdf", mime_type: "application/pdf")
       }.to raise_error(Curator::ExtractionError, /gem "kreuzberg"/)
     end
   end
@@ -81,7 +85,7 @@ RSpec.describe Curator::Extractors::Kreuzberg do
     end
 
     it "builds a Kreuzberg::Config::Extraction with tesseract OCR when ocr: :tesseract" do
-      described_class.new(ocr: :tesseract).extract("x.pdf")
+      described_class.new(ocr: :tesseract).extract("x.pdf", mime_type: "application/pdf")
 
       expect(::Kreuzberg).to have_received(:extract_file_sync) do |path:, config:|
         expect(path).to eq("x.pdf")
@@ -93,21 +97,21 @@ RSpec.describe Curator::Extractors::Kreuzberg do
     end
 
     it "treats ocr: true as :tesseract shorthand" do
-      described_class.new(ocr: true).extract("x.pdf")
+      described_class.new(ocr: true).extract("x.pdf", mime_type: "application/pdf")
       expect(::Kreuzberg).to have_received(:extract_file_sync) do |config:, **|
         expect(config.ocr.backend).to eq("tesseract")
       end
     end
 
     it "passes ocr_language through to the OCR config" do
-      described_class.new(ocr: :tesseract, ocr_language: "deu").extract("x.pdf")
+      described_class.new(ocr: :tesseract, ocr_language: "deu").extract("x.pdf", mime_type: "application/pdf")
       expect(::Kreuzberg).to have_received(:extract_file_sync) do |config:, **|
         expect(config.ocr.language).to eq("deu")
       end
     end
 
     it "passes force_ocr through without requiring an OCR backend" do
-      described_class.new(force_ocr: true).extract("x.pdf")
+      described_class.new(force_ocr: true).extract("x.pdf", mime_type: "application/pdf")
       expect(::Kreuzberg).to have_received(:extract_file_sync) do |config:, **|
         expect(config.force_ocr).to be(true)
         expect(config.ocr).to be_nil
@@ -115,7 +119,7 @@ RSpec.describe Curator::Extractors::Kreuzberg do
     end
 
     it "supports :paddle backend" do
-      described_class.new(ocr: :paddle).extract("x.pdf")
+      described_class.new(ocr: :paddle).extract("x.pdf", mime_type: "application/pdf")
       expect(::Kreuzberg).to have_received(:extract_file_sync) do |config:, **|
         expect(config.ocr.backend).to eq("paddle")
       end

@@ -1,12 +1,13 @@
 require "net/http"
+require "ipaddr"
+require "resolv"
 require "uri"
 
 module Curator
-  # Fetches http(s) URLs for Curator.ingest_url. Kept deliberately thin —
-  # follows redirects, enforces max_bytes, derives a filename and mime
-  # type from response headers. SSRF hardening (blocklisting RFC 1918
-  # ranges, metadata endpoints, etc.) is a v2 concern; for now the host
-  # app decides what URLs it trusts.
+  # Fetches http(s) URLs for Curator.ingest_url. Follows redirects,
+  # enforces max_bytes, derives a filename and mime type from response
+  # headers, and rejects loopback/private-network targets so user-supplied
+  # URLs cannot pivot into local infrastructure.
   module UrlFetcher
     Fetched = Struct.new(:bytes, :filename, :mime_type, :final_url, keyword_init: true)
 
@@ -14,6 +15,22 @@ module Curator
     OPEN_TIMEOUT     = 10
     READ_TIMEOUT     = 30
     FALLBACK_FILENAME = "download".freeze
+    BLOCKED_HOSTNAMES = %w[localhost localhost.localdomain].freeze
+    BLOCKED_IP_RANGES = [
+      IPAddr.new("0.0.0.0/8"),
+      IPAddr.new("10.0.0.0/8"),
+      IPAddr.new("100.64.0.0/10"),
+      IPAddr.new("127.0.0.0/8"),
+      IPAddr.new("169.254.0.0/16"),
+      IPAddr.new("172.16.0.0/12"),
+      IPAddr.new("192.168.0.0/16"),
+      IPAddr.new("224.0.0.0/4"),
+      IPAddr.new("::/128"),
+      IPAddr.new("::1/128"),
+      IPAddr.new("fc00::/7"),
+      IPAddr.new("fe80::/10"),
+      IPAddr.new("ff00::/8")
+    ].freeze
     # Strip C0/C1 control chars, NULs, and path separators from filenames
     # parsed out of attacker-controlled headers.
     UNSAFE_FILENAME_CHARS = /[\x00-\x1f\x7f\/\\]/.freeze
@@ -21,7 +38,7 @@ module Curator
     module_function
 
     def call(url, max_bytes:)
-      current = ensure_http!(URI(url.to_s), context: url)
+      current = ensure_safe_uri!(ensure_http!(URI(url.to_s), context: url))
 
       (MAX_REDIRECTS + 1).times do
         body = nil
@@ -38,7 +55,7 @@ module Curator
         when Net::HTTPRedirection
           location = response["location"] or
             raise FetchError, "redirect from #{current} missing Location header"
-          current = ensure_http!(URI.join(current.to_s, location), context: location)
+          current = ensure_safe_uri!(ensure_http!(URI.join(current.to_s, location), context: location))
         else
           raise FetchError,
                 "GET #{current} returned #{response.code} #{response.message}"
@@ -57,6 +74,47 @@ module Curator
       uri
     end
     private_class_method :ensure_http!
+
+    def ensure_safe_uri!(uri)
+      host = uri.host.to_s
+      if BLOCKED_HOSTNAMES.include?(host.downcase)
+        raise FetchError, "refusing to fetch #{uri}: host resolves to a blocked local address"
+      end
+
+      resolved_addresses(host).each do |address|
+        ip = IPAddr.new(address)
+        next unless blocked_ip?(ip)
+
+        raise FetchError, "refusing to fetch #{uri}: #{address} is in a blocked network range"
+      end
+
+      uri
+    end
+    private_class_method :ensure_safe_uri!
+
+    def resolved_addresses(host)
+      return [ host ] if ip_literal?(host)
+
+      Resolv.getaddresses(host).tap do |addresses|
+        raise FetchError, "fetch failed: #{host.inspect} did not resolve to an IP address" if addresses.empty?
+      end
+    rescue Resolv::ResolvError => e
+      raise FetchError, "fetch failed resolving #{host.inspect}: #{e.message}"
+    end
+    private_class_method :resolved_addresses
+
+    def ip_literal?(host)
+      IPAddr.new(host)
+      true
+    rescue IPAddr::InvalidAddressError
+      false
+    end
+    private_class_method :ip_literal?
+
+    def blocked_ip?(ip)
+      BLOCKED_IP_RANGES.any? { |range| range.include?(ip) }
+    end
+    private_class_method :blocked_ip?
 
     # Streams the response body, accumulating into a String buffer that
     # aborts as soon as max_bytes is exceeded. For redirect responses we

@@ -8,6 +8,12 @@ RSpec.describe Curator, ".ingest" do
   let(:fixture_dir) { Curator::Engine.root.join("spec/fixtures") }
   let(:md_path)     { fixture_dir.join("sample.md") }
 
+  before do
+    allow(Resolv).to receive(:getaddresses).and_call_original
+    allow(Resolv).to receive(:getaddresses).with("example.com").and_return([ "93.184.216.34" ])
+    allow(Resolv).to receive(:getaddresses).with("www.cnn.com").and_return([ "151.101.3.5" ])
+  end
+
   describe "creates a document on first ingest" do
     it "returns IngestResult(status: :created) and persists the document" do
       result = nil
@@ -30,7 +36,7 @@ RSpec.describe Curator, ".ingest" do
 
     it "enqueues Curator::IngestDocumentJob for the new document" do
       result = Curator.ingest(md_path.to_s, knowledge_base: kb)
-      expect(Curator::IngestDocumentJob).to have_been_enqueued.with(result.document)
+      expect(Curator::IngestDocumentJob).to have_been_enqueued.with(result.document.id)
     end
 
     it "passes through title, source_url, and metadata" do

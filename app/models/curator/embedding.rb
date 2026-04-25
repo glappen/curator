@@ -6,6 +6,7 @@ module Curator
 
     has_neighbors :embedding
 
+    validates :chunk_id,         uniqueness: true
     validates :embedding,       presence: true
     validates :embedding_model, presence: true
   end

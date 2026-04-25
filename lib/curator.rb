@@ -168,7 +168,7 @@ module Curator
       end
       # Enqueue outside the transaction so the job can't pick up the doc
       # before the commit is visible to the worker.
-      IngestDocumentJob.perform_later(document)
+      IngestDocumentJob.perform_later(document.id)
       document
     end
   end

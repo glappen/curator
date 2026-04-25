@@ -12,6 +12,49 @@ plus the "Ingestion Pipeline" and "Extractor contract" sections.
 
 ## Completed
 
+- [x] Phase 5 — `IngestDocumentJob` (real extract → chunk → persist pipeline)
+   - `app/jobs/curator/ingest_document_job.rb` now drives the real
+     pipeline end-to-end: status `:extracting` → download blob to a
+     tempfile → invoke configured extractor (`Curator.config.extractor`,
+     `:basic` or `:kreuzberg`) → chunk via `Curator::Chunkers::Paragraph`
+     configured from `document.knowledge_base.chunk_size` /
+     `chunk_overlap` → bulk-insert `curator_chunks` (sequence 0..N,
+     `content_tsvector` populated by the DB generated column) → status
+     `:embedding` → enqueue `EmbedChunksJob.perform_later(document)`.
+   - **Stage error plumbing**: any failure rescues into `status: :failed`
+     with `stage_error` populated as `"<stage>: <message>"` then re-raises
+     so Active Job's retry/backoff owns final disposition. No custom
+     retry logic.
+   - **Deleted-doc no-op**: if the document row no longer exists when
+     the job runs (e.g. KB was destroyed mid-flight), the job returns
+     cleanly without error.
+   - **Recovery branch**: if a prior job run committed chunks but
+     crashed before enqueueing `EmbedChunksJob`, the next perform sees
+     existing chunks and short-circuits to enqueue rather than
+     re-extracting + duplicating chunk rows.
+   - **Tempfile extension**: ActiveStorage's default tempfile name has
+     no extension when the upstream filename has none (a real case for
+     bare-URL ingests), which broke Kreuzberg's path-based MIME
+     sniffing. Job derives an extension from `Marcel::Magic` on the
+     document's `mime_type` and uses it as the tempfile suffix.
+   - **Extractor API change**: `Basic#extract` and `Kreuzberg#extract`
+     now take `mime_type:` as a kwarg, fed from `document.mime_type`
+     (set by `FileNormalizer` at ingest time via Marcel) rather than
+     re-deriving from the path extension. Matches the rest of the
+     pipeline's "MIME is decided once, at ingest" invariant.
+   - **`Curator.ingest` UX cleanup**: input dispatch now branches on
+     type — an `http(s)://` `String` routes through `UrlFetcher`;
+     non-URL strings stay on the path. `Curator.ingest_url` is removed
+     (single entry point). `knowledge_base:` defaults to
+     `KnowledgeBase.default!` so `Curator.ingest(url_or_path)` "just
+     works" once a default KB has been seeded.
+   - **Migration fix**: `create_curator_embeddings.rb.tt` had both
+     `t.references :chunk, ..., index: { unique: true }` *and* a
+     trailing `add_index :curator_embeddings, :chunk_id, unique: true`,
+     which crashed `db:migrate` with `PG::DuplicateTable`. Folded into
+     the single `t.references` declaration.
+   - Full `rspec` (275 examples) + `rubocop` green.
+
 - [x] Phase 4 — `Curator.ingest` + SHA-256 dedup + stub embed job
    - `Curator.ingest(file, knowledge_base:, title:, source_url:, metadata:, filename:)`
      module method in `lib/curator.rb`. Accepts String, Pathname, File,
@@ -55,9 +98,10 @@ plus the "Ingestion Pipeline" and "Extractor contract" sections.
        Phase 5 (marked with an inline `TODO(Phase 5)`).
      - `EmbedChunksJob#perform` flips the document to `:complete`. Real
        embedding pipeline lands in M3 (`TODO(M3)`).
-   - **URL ingest** (pulled forward from Phase 6):
-     `Curator.ingest_url(url, knowledge_base:, title:, source_url:, metadata:)`
-     plus `Curator::UrlFetcher` (`lib/curator/url_fetcher.rb`). Net::HTTP
+   - **URL ingest** (pulled forward from Phase 6): `Curator.ingest`
+     dispatches on input type — when given an `http(s)://` String it
+     fetches via `Curator::UrlFetcher` (`lib/curator/url_fetcher.rb`)
+     and ingests the response body. Net::HTTP
      GET with up to 5 redirect hops, 10s open / 30s read timeouts.
      Filename comes from `Content-Disposition` (filename / filename*=),
      falling back to the URL path basename, then `"download"`. `source_url:`
@@ -151,28 +195,10 @@ plus the "Ingestion Pipeline" and "Extractor contract" sections.
 
 ## Current Work
 
-_Phase 4 done; awaiting go-ahead on Phase 5._
+_Phase 5 done; awaiting go-ahead on Phase 6._
 
 ## Next Steps
 
-- [ ] Phase 5 — `IngestDocumentJob`
-   - `app/jobs/curator/ingest_document_job.rb` inheriting
-     `ApplicationJob` (create `app/jobs/curator/application_job.rb` too).
-   - Steps:
-     1. Update document status to `:extracting`.
-     2. Download blob to a tempfile; invoke configured extractor
-        (`Curator.config.extractor`) — `:basic` → `Curator::Extractors::Basic`,
-        `:kreuzberg` → `Curator::Extractors::Kreuzberg`.
-     3. Build chunks via `Curator::Chunkers::Paragraph` configured from
-        `document.knowledge_base.chunk_size` / `chunk_overlap`.
-     4. Insert `curator_chunks` rows (`status: :pending`, `sequence` 0..N,
-        `content_tsvector` populated by the DB generated column).
-     5. Update document status to `:embedding`; enqueue
-        `EmbedChunksJob.perform_later(document)`.
-   - Failures (any step): rescue, set `status: :failed`, populate
-     `stage_error` with the exception message + stage name, re-raise so
-     Active Job's retry/backoff policy owns final disposition. No
-     custom retry logic in M2 — host app's job adapter decides.
 - [ ] Phase 6 — `ingest_directory`, `reingest`, rake tasks
    - `Curator.ingest_directory(path, knowledge_base:, pattern: nil, recursive: true)`:
      walks `path`. Default glob is extractor-aware extension list,

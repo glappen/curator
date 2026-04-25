@@ -43,9 +43,12 @@ module Curator
         @force_ocr    = force_ocr
       end
 
-      def extract(path)
+      # mime_type: is accepted for symmetry with the extractor contract but
+      # ignored here — Kreuzberg sniffs MIME from file content itself, and
+      # its detection is more robust than a path-extension hint.
+      def extract(path, mime_type: nil) # rubocop:disable Lint/UnusedMethodArgument
         ensure_gem!
-        result = ::Kreuzberg.extract_file_sync(**extract_kwargs(path))
+        result = ::Kreuzberg.extract_file_sync(path: path.to_s, config: build_kreuzberg_config)
         build_result(result)
       rescue Curator::Error
         raise
@@ -66,18 +69,15 @@ module Curator
         raise ExtractionError, MISSING_GEM_MESSAGE
       end
 
-      def extract_kwargs(path)
-        kwargs = { path: path.to_s }
-        config = build_kreuzberg_config
-        kwargs[:config] = config if config
-        kwargs
-      end
-
+      # Always request page extraction so the chunker can stamp each chunk
+      # with the page its first new char falls on. Without this, Kreuzberg
+      # returns `pages: nil` and every chunk's page_number is silently nil
+      # — defeating the citation marker -> page lookup downstream.
       def build_kreuzberg_config
-        return nil unless @ocr || @force_ocr
         ::Kreuzberg::Config::Extraction.new(
-          ocr: ocr_config,
-          force_ocr: @force_ocr
+          ocr:       ocr_config,
+          force_ocr: @force_ocr,
+          pages:     ::Kreuzberg::Config::PageConfig.new(extract_pages: true)
         )
       end
 

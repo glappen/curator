@@ -4,15 +4,13 @@ class CreateCuratorEmbeddings < ActiveRecord::Migration[7.0]
       t.references :chunk,
                    null: false,
                    foreign_key: { to_table: :curator_chunks, on_delete: :cascade },
-                   index: { name: "index_curator_embeddings_on_chunk_id" }
+                   index: { unique: true, name: "index_curator_embeddings_on_chunk_id" }
 
       t.column :embedding, "vector(<%= embedding_dim %>)", null: false
       t.string :embedding_model, null: false
 
       t.datetime :created_at, null: false
     end
-
-    add_index :curator_embeddings, :chunk_id, unique: true
 
     # HNSW index for cosine similarity. Neighbor gem queries will hit this.
     execute <<~SQL

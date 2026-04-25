@@ -18,7 +18,7 @@ RSpec.shared_examples "a Curator extractor" do
   }.each do |filename, expected_mime|
     context "with #{filename}" do
       let(:path) { File.join(fixture_dir, filename) }
-      let(:result) { extractor.extract(path) }
+      let(:result) { extractor.extract(path, mime_type: expected_mime) }
 
       it "returns an ExtractionResult" do
         expect(result).to be_a(Curator::Extractors::ExtractionResult)

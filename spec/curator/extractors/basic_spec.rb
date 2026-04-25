@@ -10,28 +10,30 @@ RSpec.describe Curator::Extractors::Basic do
 
   describe "#extract" do
     it "always returns pages: [] (Basic has no page metadata)" do
-      result = extractor.extract(File.join(fixture_dir, "sample.md"))
+      result = extractor.extract(File.join(fixture_dir, "sample.md"), mime_type: "text/markdown")
       expect(result.pages).to eq([])
     end
 
     it "strips HTML tags from text/html input" do
-      result = extractor.extract(File.join(fixture_dir, "sample.html"))
+      result = extractor.extract(File.join(fixture_dir, "sample.html"), mime_type: "text/html")
       expect(result.content).to include("Hello, Curator")
       expect(result.content).to include("alpha")
       expect(result.content).not_to match(/<\w+/)
     end
 
-    it "raises UnsupportedMimeError on .pdf, pointing at Kreuzberg" do
+    it "raises UnsupportedMimeError on application/pdf, pointing at Kreuzberg" do
       expect {
-        extractor.extract(File.join(fixture_dir, "sample.pdf"))
+        extractor.extract(File.join(fixture_dir, "sample.pdf"), mime_type: "application/pdf")
       }.to raise_error(Curator::UnsupportedMimeError, /config\.extractor = :kreuzberg/)
     end
 
-    it "raises UnsupportedMimeError on an extension it doesn't know" do
+    it "raises UnsupportedMimeError on a mime type it doesn't know" do
       Tempfile.create([ "weird", ".xyz" ]) do |f|
         f.write("whatever")
         f.close
-        expect { extractor.extract(f.path) }.to raise_error(Curator::UnsupportedMimeError)
+        expect {
+          extractor.extract(f.path, mime_type: "application/x-weird")
+        }.to raise_error(Curator::UnsupportedMimeError, /application\/x-weird/)
       end
     end
   end

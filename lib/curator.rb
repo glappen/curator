@@ -21,6 +21,8 @@ require "curator/url_fetcher"
 # installs `acts_as_chat` never registers.
 
 module Curator
+  URL_PATTERN = %r{\Ahttps?://}i
+
   class << self
     attr_writer :config
 
@@ -38,18 +40,50 @@ module Curator
       @config = nil
     end
 
-    # Ingest a file into a knowledge base.
+    # Ingest a file *or URL* into a knowledge base.
     #
-    # @param file [String, Pathname, File, IO, StringIO,
-    #              ActionDispatch::Http::UploadedFile, ActiveStorage::Blob]
-    # @param knowledge_base [Curator::KnowledgeBase, String, Symbol] Instance
-    #   or slug. Slugs are looked up via `KnowledgeBase.find_by!(slug:)`.
-    # @param title [String, nil] Defaults to the filename stem.
+    # If `input` is a String beginning with `http://` or `https://`, Curator
+    # fetches it via `UrlFetcher` (max-size enforced, redirect-following,
+    # SSRF-blocked) and ingests the response body. Anything else is treated
+    # as a local file or in-memory blob.
+    #
+    # @param input [String, Pathname, File, IO, StringIO,
+    #               ActionDispatch::Http::UploadedFile, ActiveStorage::Blob]
+    #   A URL string (`https://…`), a filesystem path, or an in-memory blob.
+    # @param knowledge_base [Curator::KnowledgeBase, String, Symbol, nil] Instance
+    #   or slug. Slugs are looked up via `KnowledgeBase.find_by!(slug:)`. When
+    #   omitted (nil), Curator routes to `KnowledgeBase.default!`.
+    # @param title [String, nil] Defaults to the filename (with extension).
     # @param source_url [String, nil]
+    #   For URL inputs: defaults to the resolved final URL (post-redirect).
+    #   For path/File inputs: defaults to a `file:///<absolute path>` URL.
+    #   For IO/blob/upload inputs: nil.
     # @param metadata [Hash]
     # @param filename [String, nil] Override for IO inputs without a path.
     # @return [Curator::IngestResult]
-    def ingest(file, knowledge_base:, title: nil, source_url: nil, metadata: {}, filename: nil)
+    def ingest(input, knowledge_base: nil, title: nil, source_url: nil, metadata: {}, filename: nil)
+      if url_string?(input)
+        return ingest_from_url(
+          input,
+          knowledge_base: knowledge_base, title: title,
+          source_url:     source_url, metadata: metadata
+        )
+      end
+
+      ingest_from_file(
+        input,
+        knowledge_base: knowledge_base, title: title,
+        source_url:     source_url, metadata: metadata, filename: filename
+      )
+    end
+
+    private
+
+    def url_string?(input)
+      input.is_a?(String) && input.match?(URL_PATTERN)
+    end
+
+    def ingest_from_file(file, knowledge_base:, title:, source_url:, metadata:, filename:)
       kb = resolve_knowledge_base(knowledge_base)
 
       # Cheap pre-check for inputs whose size we can read without slurping
@@ -57,15 +91,16 @@ module Curator
       # blobs before FileNormalizer.call materializes the bytes.
       enforce_size_precheck!(file)
 
-      normalized = FileNormalizer.call(file, filename: filename)
+      normalized          = FileNormalizer.call(file, filename: filename)
       enforce_normalized_size!(normalized)
 
-      content_hash = Digest::SHA256.hexdigest(normalized.bytes)
+      resolved_source_url = source_url || derive_file_source_url(file)
+      content_hash        = Digest::SHA256.hexdigest(normalized.bytes)
 
       existing = kb.documents.find_by(content_hash: content_hash)
       return IngestResult.new(document: existing, status: :duplicate) if existing
 
-      document = create_document!(kb, normalized, content_hash, title: title, source_url: source_url, metadata: metadata)
+      document = create_document!(kb, normalized, content_hash, title: title, source_url: resolved_source_url, metadata: metadata)
       IngestResult.new(document: document, status: :created)
     rescue ActiveRecord::RecordNotUnique
       # Concurrent ingest of the same content_hash got there first. The
@@ -76,17 +111,12 @@ module Curator
       IngestResult.new(document: existing, status: :duplicate)
     end
 
-    # Fetch a URL and ingest its body. Thin wrapper around UrlFetcher +
-    # Curator.ingest; `source_url:` defaults to the resolved final URL
-    # (after redirects) so the document self-documents where it came from.
-    #
-    # @return [Curator::IngestResult]
-    def ingest_url(url, knowledge_base:, title: nil, source_url: nil, metadata: {})
+    def ingest_from_url(url, knowledge_base:, title:, source_url:, metadata:)
       fetched = UrlFetcher.call(url, max_bytes: config.max_document_size)
 
       # When the URL has no usable path basename (e.g. bare homepages like
       # https://cnn.com/), UrlFetcher falls back to "download" as the
-      # filename. Letting Curator.ingest derive the title from that would
+      # filename. Letting the file path derive the title from that would
       # leave every such doc titled "download" — fall back to the URL
       # itself, which is at least identifying.
       resolved_title = title
@@ -94,7 +124,7 @@ module Curator
         resolved_title = fetched.final_url
       end
 
-      ingest(
+      ingest_from_file(
         StringIO.new(fetched.bytes),
         knowledge_base: knowledge_base,
         title:          resolved_title,
@@ -104,10 +134,10 @@ module Curator
       )
     end
 
-    private
-
     def resolve_knowledge_base(kb)
       case kb
+      when nil
+        KnowledgeBase.default!
       when KnowledgeBase
         kb
       when String, Symbol
@@ -148,11 +178,26 @@ module Curator
             "max_document_size is #{config.max_document_size}."
     end
 
+    # Build a file:/// URL from a path-like input so a file ingested off
+    # disk self-documents where it came from. Returns nil for inputs
+    # without an on-disk path (IO/StringIO/UploadedFile/Blob) — those
+    # don't have a meaningful "source" for the human reader, and the URL
+    # ingest path overrides source_url with the resolved final URL anyway.
+    # Not URL-encoded: this is an informational hint, not a fetchable URL.
+    def derive_file_source_url(file)
+      path = case file
+      when String, Pathname then file.to_s
+      when File             then file.path
+      end
+      return nil if path.nil? || path.empty?
+      "file://#{File.expand_path(path)}"
+    end
+
     def create_document!(kb, normalized, content_hash, title:, source_url:, metadata:)
       document = nil
       ActiveRecord::Base.transaction do
         document = kb.documents.create!(
-          title:        title || File.basename(normalized.filename, ".*"),
+          title:        title || normalized.filename,
           source_url:   source_url,
           content_hash: content_hash,
           mime_type:    normalized.mime_type,

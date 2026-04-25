@@ -8,27 +8,28 @@ module Curator
     # Anything outside this whitelist raises UnsupportedMimeError pointing
     # the user at `config.extractor = :kreuzberg`.
     class Basic
-      EXTENSIONS = {
-        ".txt"      => "text/plain",
-        ".md"       => "text/markdown",
-        ".markdown" => "text/markdown",
-        ".csv"      => "text/csv",
-        ".html"     => "text/html",
-        ".htm"      => "text/html"
-      }.freeze
+      SUPPORTED_MIME_TYPES = %w[
+        text/plain
+        text/markdown
+        text/csv
+        text/html
+      ].freeze
 
-      def extract(path)
-        path = path.to_s
-        ext  = File.extname(path).downcase
-        mime = EXTENSIONS[ext] or
+      # Dispatches by mime_type rather than file extension: ActiveStorage
+      # tempfile paths and URL fetches don't always carry a meaningful
+      # extension, but the document already has a Marcel-derived mime_type
+      # from FileNormalizer. Pass it in.
+      def extract(path, mime_type:)
+        unless SUPPORTED_MIME_TYPES.include?(mime_type)
           raise UnsupportedMimeError,
-                "Basic extractor cannot handle #{ext.empty? ? path : ext.inspect}. " \
+                "Basic extractor cannot handle #{mime_type.inspect}. " \
                 "For PDF, Office, and other rich formats set `config.extractor = :kreuzberg`."
+        end
 
-        raw = File.read(path, encoding: "utf-8")
-        content = mime == "text/html" ? strip_html(raw) : raw
+        raw     = File.read(path.to_s, encoding: "utf-8")
+        content = mime_type == "text/html" ? strip_html(raw) : raw
 
-        ExtractionResult.new(content: content, mime_type: mime, pages: [])
+        ExtractionResult.new(content: content, mime_type: mime_type, pages: [])
       end
 
       private

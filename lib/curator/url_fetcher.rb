@@ -4,7 +4,7 @@ require "resolv"
 require "uri"
 
 module Curator
-  # Fetches http(s) URLs for Curator.ingest_url. Follows redirects,
+  # Fetches http(s) URLs for Curator.ingest. Follows redirects,
   # enforces max_bytes, derives a filename and mime type from response
   # headers, and rejects loopback/private-network targets so user-supplied
   # URLs cannot pivot into local infrastructure.
@@ -69,7 +69,7 @@ module Curator
     def ensure_http!(uri, context:)
       unless uri.is_a?(URI::HTTP) || uri.is_a?(URI::HTTPS)
         raise ArgumentError,
-              "Curator.ingest_url only supports http(s) URLs (got #{context.inspect})"
+              "Curator URL ingest only supports http(s) URLs (got #{context.inspect})"
       end
       uri
     end

@@ -30,7 +30,8 @@ RSpec.describe Curator, ".ingest" do
       expect(doc.mime_type).to eq("text/markdown")
       expect(doc.byte_size).to eq(md_path.size)
       expect(doc.content_hash).to eq(Digest::SHA256.hexdigest(md_path.binread))
-      expect(doc.title).to eq("sample")
+      expect(doc.title).to eq("sample.md")
+      expect(doc.source_url).to eq("file://#{File.expand_path(md_path.to_s)}")
       expect(doc.file).to be_attached
     end
 
@@ -117,9 +118,22 @@ RSpec.describe Curator, ".ingest" do
         Curator.ingest(md_path.to_s, knowledge_base: 42)
       }.to raise_error(ArgumentError, /must be a Curator::KnowledgeBase/)
     end
+
+    it "routes to KnowledgeBase.default! when knowledge_base: is omitted" do
+      default_kb = create(:curator_knowledge_base, is_default: true)
+      result = Curator.ingest(md_path.to_s)
+      expect(result).to be_created
+      expect(result.document.knowledge_base).to eq(default_kb)
+    end
+
+    it "raises a helpful RecordNotFound when no default KB exists and none was passed" do
+      expect {
+        Curator.ingest(md_path.to_s)
+      }.to raise_error(ActiveRecord::RecordNotFound, /seed_default!|knowledge_base:/)
+    end
   end
 
-  describe "Curator.ingest_url" do
+  describe "URL ingestion (Curator.ingest with an http(s) string)" do
     it "fetches the URL and creates a document" do
       stub_request(:get, "https://example.com/a.md")
         .to_return(
@@ -128,9 +142,9 @@ RSpec.describe Curator, ".ingest" do
           headers: { "Content-Type" => "text/markdown" }
         )
 
-      result = Curator.ingest_url("https://example.com/a.md", knowledge_base: kb)
+      result = Curator.ingest("https://example.com/a.md", knowledge_base: kb)
       expect(result).to be_created
-      expect(result.document.title).to eq("a")
+      expect(result.document.title).to eq("a.md")
       expect(result.document.mime_type).to eq("text/markdown")
     end
 
@@ -138,7 +152,7 @@ RSpec.describe Curator, ".ingest" do
       stub_request(:get, "https://www.cnn.com/")
         .to_return(status: 200, body: "<html></html>", headers: { "Content-Type" => "text/html" })
 
-      result = Curator.ingest_url("https://www.cnn.com/", knowledge_base: kb)
+      result = Curator.ingest("https://www.cnn.com/", knowledge_base: kb)
       expect(result.document.title).to eq("https://www.cnn.com/")
     end
 
@@ -146,7 +160,7 @@ RSpec.describe Curator, ".ingest" do
       stub_request(:get, "https://www.cnn.com/")
         .to_return(status: 200, body: "<html></html>", headers: { "Content-Type" => "text/html" })
 
-      result = Curator.ingest_url("https://www.cnn.com/", knowledge_base: kb, title: "CNN")
+      result = Curator.ingest("https://www.cnn.com/", knowledge_base: kb, title: "CNN")
       expect(result.document.title).to eq("CNN")
     end
 
@@ -160,7 +174,7 @@ RSpec.describe Curator, ".ingest" do
           headers: { "Content-Type" => "text/markdown" }
         )
 
-      result = Curator.ingest_url("https://example.com/redir", knowledge_base: kb)
+      result = Curator.ingest("https://example.com/redir", knowledge_base: kb)
       expect(result.document.source_url).to eq("https://example.com/final.md")
     end
 
@@ -168,7 +182,7 @@ RSpec.describe Curator, ".ingest" do
       stub_request(:get, "https://example.com/a.md")
         .to_return(status: 200, body: "# x\n", headers: { "Content-Type" => "text/markdown" })
 
-      result = Curator.ingest_url(
+      result = Curator.ingest(
         "https://example.com/a.md",
         knowledge_base: kb,
         source_url: "https://canonical.example/a"
@@ -180,8 +194,8 @@ RSpec.describe Curator, ".ingest" do
       stub_request(:get, "https://example.com/a.md")
         .to_return(status: 200, body: "# x\n", headers: { "Content-Type" => "text/markdown" })
 
-      first = Curator.ingest_url("https://example.com/a.md", knowledge_base: kb)
-      result = Curator.ingest_url("https://example.com/a.md", knowledge_base: kb)
+      first = Curator.ingest("https://example.com/a.md", knowledge_base: kb)
+      result = Curator.ingest("https://example.com/a.md", knowledge_base: kb)
       expect(result).to be_duplicate
       expect(result.document).to eq(first.document)
     end
@@ -190,8 +204,17 @@ RSpec.describe Curator, ".ingest" do
       stub_request(:get, "https://example.com/404").to_return(status: 404)
 
       expect {
-        Curator.ingest_url("https://example.com/404", knowledge_base: kb)
+        Curator.ingest("https://example.com/404", knowledge_base: kb)
       }.to raise_error(Curator::FetchError)
+    end
+
+    it "treats an http:// string as a URL even though it's a String" do
+      stub_request(:get, "http://example.com/plain.txt")
+        .to_return(status: 200, body: "hello", headers: { "Content-Type" => "text/plain" })
+
+      result = Curator.ingest("http://example.com/plain.txt", knowledge_base: kb)
+      expect(result).to be_created
+      expect(result.document.source_url).to eq("http://example.com/plain.txt")
     end
   end
 
@@ -220,9 +243,45 @@ RSpec.describe Curator, ".ingest" do
 
       result = Curator.ingest(uploaded, knowledge_base: kb)
       expect(result).to be_created
-      expect(result.document.title).to eq("uploaded")
+      expect(result.document.title).to eq("uploaded.md")
+      # No on-disk source path for an UploadedFile — leave source_url blank.
+      expect(result.document.source_url).to be_nil
     ensure
       tempfile&.close!
+    end
+  end
+
+  describe "source_url derivation for file inputs" do
+    it "defaults source_url to file:// for a String path" do
+      result = Curator.ingest(md_path.to_s, knowledge_base: kb)
+      expect(result.document.source_url).to eq("file://#{File.expand_path(md_path.to_s)}")
+    end
+
+    it "defaults source_url to file:// for a Pathname" do
+      result = Curator.ingest(md_path, knowledge_base: kb)
+      expect(result.document.source_url).to eq("file://#{File.expand_path(md_path.to_s)}")
+    end
+
+    it "defaults source_url to file:// for a File handle" do
+      File.open(md_path) do |f|
+        result = Curator.ingest(f, knowledge_base: kb, filename: "sample.md")
+        expect(result.document.source_url).to eq("file://#{File.expand_path(md_path.to_s)}")
+      end
+    end
+
+    it "leaves source_url nil for IO inputs without a path" do
+      io = StringIO.new("# inline\n")
+      result = Curator.ingest(io, knowledge_base: kb, filename: "inline.md")
+      expect(result.document.source_url).to be_nil
+    end
+
+    it "honors an explicit source_url: override over the derived file:// URL" do
+      result = Curator.ingest(
+        md_path.to_s,
+        knowledge_base: kb,
+        source_url: "https://canonical.example/sample.md"
+      )
+      expect(result.document.source_url).to eq("https://canonical.example/sample.md")
     end
   end
 end

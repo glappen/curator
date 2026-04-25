@@ -116,6 +116,16 @@ module Curator
     # is re-enqueued.
     def reingest(document)
       ActiveRecord::Base.transaction do
+        # Reload first: callers may hold a stale `document` reference whose
+        # in-memory status hasn't caught up with what the IngestDocumentJob
+        # / EmbedChunksJob wrote (a fresh-from-create document will still
+        # have status=:pending in memory after the pipeline has flipped it
+        # to :complete in the DB). AR's dirty-tracking on update! compares
+        # against the in-memory snapshot, not the DB row, so without this
+        # `update!(status: :pending, ...)` is a no-op when the in-memory
+        # status already happens to be :pending — the destroy_all would
+        # land but the document would never get re-enqueued.
+        document.reload
         document.chunks.destroy_all
         document.update!(status: :pending, stage_error: nil)
       end

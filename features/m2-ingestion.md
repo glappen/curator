@@ -12,6 +12,46 @@ plus the "Ingestion Pipeline" and "Extractor contract" sections.
 
 ## Completed
 
+- [x] Phase 7 — End-to-end smoke + `reingest` stale-instance fix
+   - **`spec/requests/curator/ingestion_smoke_spec.rb`** drives the full
+     M2 pipeline against the dummy app with the EmbedChunksJob still in
+     stub mode (status flip to `:complete`, no real embedding — M3
+     replaces the body):
+     1. Seeds the default KB, ingests `spec/fixtures/sample.md`,
+        `perform_enqueued_jobs` drives it through to `:complete` with
+        chunks populated.
+     2. Re-ingest of the same file returns `:duplicate`, no new
+        document or chunk rows, no `IngestDocumentJob` enqueued.
+     3. `max_document_size = 10` raises `Curator::FileTooLargeError`
+        before any DB write.
+     4. `sample.pdf` under `extractor: :basic` lands the document at
+        `:failed` with `Curator::UnsupportedMimeError` in `stage_error`
+        (the rejection happens in the job, not in `Curator.ingest`,
+        since MIME isn't validated until extraction).
+     5. `ingest_directory` over a small fixture tree drives every doc
+        to `:complete`; second pass returns all `:duplicate`.
+     6. `Curator.reingest(doc)` replaces chunks (new IDs) and brings
+        the document back to `:complete`.
+   - **Bug fix uncovered by step 6**: `Curator.reingest` was calling
+     `document.update!(status: :pending, stage_error: nil)` on the
+     caller's AR instance. AR's dirty tracking compares against the
+     in-memory snapshot, not the DB row — and the canonical
+     reingest-after-complete pattern (`doc = Curator.ingest(...);
+     ... ; Curator.reingest(doc)`) hands the caller a doc whose
+     in-memory `status` is still `:pending` (its creation state) even
+     after the job has driven the DB row to `:complete`. New value ==
+     in-memory value → AR emits no UPDATE, the DB row stays at
+     `:complete`, and the IngestDocumentJob short-circuits because
+     `document.pending?` is false. `chunks.destroy_all` lands fine
+     (it queries the DB directly), so the symptom is "chunks gone,
+     status frozen at :complete, no re-ingest." Fixed by `document.reload`
+     at the top of the reingest transaction so dirty-tracking compares
+     against the live row. Regression test in `spec/curator/reingest_spec.rb`.
+   - Existing reingest spec didn't catch this because its factory
+     created the document with in-memory `status: :complete`, so the
+     `:pending` write *was* a real change.
+   - Full `rspec` (314 examples) + `rubocop` green. **M2 complete.**
+
 - [x] Phase 6 — `ingest_directory`, `reingest`, rake tasks
    - **`Curator.ingest_directory(path, knowledge_base: nil, pattern: nil, recursive: true)`**
      in `lib/curator.rb`. Walks `path`, hands each match to
@@ -271,30 +311,11 @@ plus the "Ingestion Pipeline" and "Extractor contract" sections.
 
 ## Current Work
 
-_Phase 6 done; awaiting go-ahead on Phase 7._
+_M2 complete. Next milestone: M3 — Embedding pipeline._
 
 ## Next Steps
 
-- [ ] Phase 7 — End-to-end smoke
-   - Request/job-level spec that, against the `spec/dummy` test DB:
-     1. Seeds the default KB.
-     2. `Curator.ingest` on a fixture `.md` file — asserts `IngestResult#status == :created`,
-        drives jobs inline via `perform_enqueued_jobs`, asserts
-        `document.reload.status == :complete`, asserts
-        `document.chunks.count > 0` and chunks are populated.
-     3. `Curator.ingest` on the same file again — asserts
-        `IngestResult#status == :duplicate`, no new document or chunks
-        created.
-     4. `Curator.ingest` on an oversized file — asserts
-        `Curator::FileTooLargeError` raised and no row created.
-     5. `Curator.ingest` on an unsupported MIME (e.g. a `.pdf` under
-        Basic) — asserts `Curator::UnsupportedMimeError`.
-     6. `Curator.ingest_directory` on a small fixture tree — asserts
-        mixed `:created` / `:duplicate` statuses.
-     7. `Curator.reingest(doc)` — asserts chunks replaced, document
-        returns to `:complete`.
-   - **Validate**: Phase 7 checklist below, plus `bundle exec rspec` +
-     `bundle exec rubocop` both green. **M2 complete.**
+_(none — Phase 7 closed M2)_
 
 ## Files Under Development
 

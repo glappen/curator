@@ -15,5 +15,13 @@ module Curator
     validates :content_hash, presence: true
     validates :mime_type,    presence: true
     validates :byte_size,    numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+
+    def failed_chunk_count
+      chunks.where(status: :failed).count
+    end
+
+    def partially_embedded?
+      failed_chunk_count.positive?
+    end
   end
 end

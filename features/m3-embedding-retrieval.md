@@ -156,31 +156,37 @@ plus the "Retrieval Pipeline", "Service Object API", and "Database Schema"
 
 ## Next Steps
 
-- [ ] Phase 5 — Hybrid retrieval (RRF fusion)
-   - **Query-embedding ownership**: `Curator.search` embeds the
-     query *once* at the top, then passes both `query` (string,
-     for keyword) and `query_vec` (for vector) into the
-     strategy. Vector and Hybrid both consume `query_vec`;
-     neither strategy re-embeds. Keyword ignores `query_vec`.
-   - `Curator::Retrieval::Hybrid#call(kb, query, query_vec,
-     limit:, threshold:)`: runs Vector and Keyword in sequence
-     (no Threads / Async — the host's DB connection pool isn't
-     guaranteed to support concurrent checkout from one request),
-     fuses ID lists via `Neighbor::Reranking.rrf(vector_ids,
-     keyword_ids)`, top-K from the fused list.
-   - **Threshold applied to vector hits *before* fusion** (Q3) —
-     filter the vector list, then hand the survivors plus the full
-     keyword list to RRF.
-   - Hit `score:` carries the underlying cosine for chunks that
-     came through the vector half (Q6 — `score: nil` only if a
-     hit was keyword-only and never appeared in the vector
-     candidates).
-   - `Curator.search` defaults to `strategy:` from the KB. The full
-     three-way override allowlist (`%i[hybrid vector keyword]`) is
-     validated at the top of `.search`.
-   - Trace step: `rrf_fusion` (input list lengths, output count,
-     duration).
-   - **Validate:** see Phase 5 checklist.
+- [x] **Phase 5 — Hybrid retrieval (RRF fusion).**
+   - **Query-embedding ownership**: `Curator::Searcher#execute_strategy`
+     calls `embed_query` once at the top for any strategy that needs a
+     vector (`needs_query_vec?(strategy)` → vector | hybrid). Hybrid
+     does not re-embed; keyword path skips embedding entirely.
+   - `Curator::Retrieval::Hybrid#call(kb, query, query_vec, limit:,
+     threshold:)` runs Vector then Keyword sequentially and delegates
+     to `Hybrid.fuse(vector_hits, keyword_hits, limit:)`. The class
+     method is the public seam the Searcher uses so the
+     `rrf_fusion` trace payload can carry the input list sizes
+     without re-running the underlying queries.
+   - **Threshold filters the vector list before fusion** — that's
+     Vector's existing behavior, no extra work needed in Hybrid.
+     Bumping threshold past the highest vector score empties the
+     vector half and hybrid collapses to keyword-only (verified
+     end-to-end).
+   - **Score provenance**: `Hit#score` carries the cosine for any
+     contributor that came through the vector half (looked up by
+     chunk_id from `vector_hits`); keyword-only contributions get
+     `nil`. The fused RRF score is intentionally not exposed —
+     cosine and RRF live in different units, conflating them in one
+     `score` field would mislead callers (Q6).
+   - Trace step: `rrf_fusion` payload =
+     `{ vector_candidate_count, keyword_candidate_count, fused_count,
+       top_chunk_ids }`. Captured by closing a small `meta` hash over
+     the `Tracing.record` block — sidesteps having to thread
+     intermediate counts back out of `Hybrid#call`.
+   - **Validate (Phase 5 checklist):** all 6 boxes green via
+     `spec/curator/retrieval/hybrid_spec.rb` (6 ex) and the hybrid
+     block added to `spec/curator/search_spec.rb` (6 ex). `bundle exec
+     rspec` 402 ex, 0 failures; `bundle exec rubocop` no offenses.
 
 - [ ] Phase 6 — `Curator.reembed` + `curator:reembed` rake task
    - `Curator.reembed(knowledge_base:, scope: :stale)` library

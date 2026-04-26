@@ -17,6 +17,7 @@ require "curator/search_results"
 require "curator/tracing"
 require "curator/retrieval/embedding_scoped"
 require "curator/retrieval/vector"
+require "curator/retrieval/keyword"
 require "curator/searcher"
 
 # Note: `curator/engine` and the `ruby_llm` / `neighbor` requires live in

@@ -122,30 +122,39 @@ plus the "Retrieval Pipeline", "Service Object API", and "Database Schema"
      wiring. Specs that need to assert call counts or simulate
      failures register tighter stubs that take precedence.
 
-## Next Steps
+- [x] **Phase 4 — Keyword retrieval.**
+   - `Curator::Retrieval::Keyword#call(kb, query, limit:)` joins
+     `Chunk` through `:document` filtered by KB id, then
+     `where("curator_chunks.content_tsvector @@
+     plainto_tsquery(?::regconfig, ?)", kb.tsvector_config,
+     query)` and orders by `ts_rank(...)` desc with
+     `curator_chunks.id ASC` as a stable tiebreaker. Single
+     `plainto_tsquery(...)` fragment is built once via
+     `sanitize_sql_array` and interpolated into both the WHERE
+     and ORDER BY — `Arel.sql(...)` doesn't accept binds so we
+     can't use `?` placeholders in the order expression
+     directly.
+   - Defensive guards mirror Vector: blank/nil query or
+     non-positive limit returns `[]` without touching the DB.
+   - Hit `score: nil` for every keyword hit; ranks 1-indexed.
+   - **No `EmbeddingScoped` mixin** — keyword reaches `:pending`
+     and `:failed` chunks too. Mid-reembed safety doesn't apply
+     because no cosine math runs.
+   - `Curator::Searcher#run_keyword(kb, limit, search_row)`
+     wraps the call in `Curator::Tracing.record(step_type:
+     :keyword_search, payload_builder: ...)` (candidate_count
+     + top chunk_ids). The pre-existing `:keyword` +
+     `threshold:` ArgumentError guard from Phase 3 stays as-is.
+   - `effective_threshold` already returns nil for `:keyword`,
+     so `curator_searches.similarity_threshold` writes NULL on
+     keyword runs (column is nullable). No migration change.
+   - **Validate (Phase 4 checklist):** all 7 boxes green via
+     `spec/curator/retrieval/keyword_spec.rb` (9 ex) and the
+     keyword block added to `spec/curator/search_spec.rb` (5
+     ex). `bundle exec rspec` 387 ex, 0 failures; `bundle exec
+     rubocop` no offenses.
 
-- [ ] Phase 4 — Keyword retrieval
-   - `Curator::Retrieval::Keyword#call(kb, query, limit:)`:
-     `Chunk.joins(:document).where(documents.knowledge_base_id =
-     kb.id)` joined to `where("content_tsvector @@
-     plainto_tsquery(?, ?)", kb.tsvector_config, query)`,
-     ordered by `ts_rank(content_tsvector,
-     plainto_tsquery(?, ?))` descending, limited to `limit`.
-   - **Note**: keyword retrieval scopes through `documents`, not
-     through `embeddings`, since chunks may exist without
-     embeddings (status `:pending` / `:failed`). Document-level
-     `knowledge_base_id` is the join column; embedding_model
-     filtering doesn't apply to pure-keyword retrieval (no
-     embeddings involved).
-   - Hit `score: nil` (tsvector rank is length-dependent and not
-     useful enough to surface — Q6).
-   - `Curator.search(strategy: :keyword)` wired through. If
-     `strategy: :keyword` is passed alongside a non-nil
-     `threshold:`, raise `ArgumentError` (threshold is meaningless
-     in pure-keyword mode; silent ignore would be a footgun).
-   - Trace step: `keyword_search` (candidate_count, top-rank
-     chunk_ids, duration).
-   - **Validate:** see Phase 4 checklist.
+## Next Steps
 
 - [ ] Phase 5 — Hybrid retrieval (RRF fusion)
    - **Query-embedding ownership**: `Curator.search` embeds the
@@ -356,21 +365,21 @@ spec/
 - [x] Trace level `:off` → no step rows.
 
 ### Phase 4 — Keyword retrieval
-- [ ] `Curator.search(query, knowledge_base: kb, strategy:
+- [x] `Curator.search(query, knowledge_base: kb, strategy:
       :keyword)` returns hits ordered by tsvector rank desc.
-- [ ] `score` is `nil` on every hit.
-- [ ] `strategy: :keyword` + non-nil `threshold:` → `ArgumentError`.
-- [ ] Hits scope to KB: chunks in another KB don't appear.
-- [ ] `:pending` / `:failed` chunks DO appear in keyword results
+- [x] `score` is `nil` on every hit.
+- [x] `strategy: :keyword` + non-nil `threshold:` → `ArgumentError`.
+- [x] Hits scope to KB: chunks in another KB don't appear.
+- [x] `:pending` / `:failed` chunks DO appear in keyword results
       (no embedding required).
-- [ ] Tsvector config respected end-to-end (index AND query):
+- [x] Tsvector config respected end-to-end (index AND query):
       KB with `tsvector_config: "simple"` indexes "running" as
       `running` and a query for "run" misses; same KB with
       `tsvector_config: "english"` indexes as `run` and the
       query hits. Proves Phase 1's index-side fix flows
       through to Phase 4's query-side `plainto_tsquery(
       kb.tsvector_config, query)`.
-- [ ] `keyword_search` step row written when trace is on.
+- [x] `keyword_search` step row written when trace is on.
 
 ### Phase 5 — Hybrid retrieval
 - [ ] Default `Curator.search(query, knowledge_base: kb)` runs

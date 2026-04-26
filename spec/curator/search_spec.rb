@@ -171,6 +171,94 @@ RSpec.describe "Curator.search" do
     end
   end
 
+  describe "keyword retrieval (KB default)" do
+    let(:kb) do
+      create(:curator_knowledge_base,
+             retrieval_strategy: "keyword",
+             tsvector_config:    "english",
+             chunk_limit:        5)
+    end
+
+    it "returns hits ordered by tsvector rank without invoking the embed API" do
+      hi   = make_chunk(content: "alpha alpha gamma", sequence: 0)
+      _lo  = make_chunk(content: "alpha sometimes",   sequence: 1)
+      _far = make_chunk(content: "epsilon zeta",      sequence: 2)
+      expect(RubyLLM).not_to receive(:embed)
+
+      results = Curator.search("alpha", knowledge_base: kb)
+
+      expect(results.hits.first.chunk_id).to eq(hi.id)
+      expect(results.hits.map(&:rank)).to    eq((1..results.size).to_a)
+    end
+
+    it "leaves every hit's score nil" do
+      make_chunk(content: "alpha beta", sequence: 0)
+      results = Curator.search("alpha", knowledge_base: kb)
+      expect(results.hits.map(&:score)).to all(be_nil)
+    end
+
+    it "snapshots strategy=keyword on the curator_searches row with similarity_threshold nil" do
+      make_chunk(content: "alpha", sequence: 0)
+      Curator.search("alpha", knowledge_base: kb)
+
+      row = Curator::Search.sole
+      expect(row.retrieval_strategy).to   eq("keyword")
+      expect(row.similarity_threshold).to be_nil
+      expect(row).to                      be_success
+    end
+
+    describe "tracing" do
+      around do |ex|
+        original = Curator.config.trace_level
+        ex.run
+      ensure
+        Curator.config.trace_level = original
+      end
+
+      it "writes a keyword_search step row with non-empty payload at :full" do
+        make_chunk(content: "alpha", sequence: 0)
+        Curator.config.trace_level = :full
+
+        Curator.search("alpha", knowledge_base: kb)
+
+        steps = Curator::Search.sole.search_steps.order(:sequence)
+        expect(steps.map(&:step_type)).to eq(%w[keyword_search])
+        expect(steps.first.payload).to    include("candidate_count")
+      end
+
+      it "writes a keyword_search step row with empty payload at :summary" do
+        make_chunk(content: "alpha", sequence: 0)
+        Curator.config.trace_level = :summary
+
+        Curator.search("alpha", knowledge_base: kb)
+
+        row = Curator::Search.sole
+        expect(row.search_steps.count).to eq(1)
+        expect(row.search_steps.pluck(:payload)).to all(eq({}))
+      end
+
+      it "writes no step rows at :off" do
+        make_chunk(content: "alpha", sequence: 0)
+        Curator.config.trace_level = :off
+
+        Curator.search("alpha", knowledge_base: kb)
+
+        expect(Curator::Search.sole.search_steps.count).to eq(0)
+      end
+    end
+
+    it "surfaces :pending / :failed chunks (no embeddings required)" do
+      pending_chunk = create(:curator_chunk, document: document, sequence: 0,
+                                             content: "alpha pending", status: :pending)
+      failed_chunk  = create(:curator_chunk, document: document, sequence: 1,
+                                             content: "alpha failed",  status: :failed)
+
+      hit_ids = Curator.search("alpha", knowledge_base: kb).hits.map(&:chunk_id)
+
+      expect(hit_ids).to include(pending_chunk.id, failed_chunk.id)
+    end
+  end
+
   describe "tracing" do
     around do |ex|
       original = Curator.config.trace_level

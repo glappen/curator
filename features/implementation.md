@@ -128,7 +128,7 @@ embedding_model        string           # e.g. "text-embedding-3-small"
 chunk_model            string           # e.g. "gpt-5-mini"
 chunk_size             integer default 512    # target token count
 chunk_overlap          integer default 50
-similarity_threshold   decimal default 0.7
+similarity_threshold   decimal default 0.2  # M3 P3: lowered from 0.7 — real OpenAI cosines for relevant pairs sit 0.2–0.5
 retrieval_strategy     string default "hybrid"  # hybrid | vector | keyword
 tsvector_config        string default "english"
 strict_grounding       boolean default true

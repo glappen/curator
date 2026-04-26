@@ -12,6 +12,12 @@ require "curator/chunkers/paragraph"
 require "curator/file_normalizer"
 require "curator/ingest_result"
 require "curator/url_fetcher"
+require "curator/hit"
+require "curator/search_results"
+require "curator/tracing"
+require "curator/retrieval/embedding_scoped"
+require "curator/retrieval/vector"
+require "curator/searcher"
 
 # Note: `curator/engine` and the `ruby_llm` / `neighbor` requires live in
 # lib/curator-rails.rb, which Bundler.require loads *after* Rails boots.
@@ -107,6 +113,28 @@ module Curator
       glob_patterns = directory_glob_patterns(pattern, recursive)
 
       files_to_ingest(base, glob_patterns).map { |fp| ingest_one_for_directory(fp, kb) }
+    end
+
+    # Search a knowledge base for chunks relevant to `query`.
+    #
+    # @param query [String] non-empty user query.
+    # @param knowledge_base [Curator::KnowledgeBase, String, Symbol, nil]
+    #   Instance, slug, or nil → `KnowledgeBase.default!`.
+    # @param limit [Integer, nil] Override `kb.chunk_limit`.
+    # @param threshold [Float, nil] Cosine cutoff (0..1). Override
+    #   `kb.similarity_threshold`. Meaningless for `strategy: :keyword`
+    #   — passing both raises ArgumentError.
+    # @param strategy [:vector, :keyword, :hybrid, nil] Override the
+    #   KB's `retrieval_strategy`. nil → use the KB default.
+    # @return [Curator::SearchResults]
+    def search(query, knowledge_base: nil, limit: nil, threshold: nil, strategy: nil)
+      Searcher.new(
+        query,
+        knowledge_base: knowledge_base,
+        limit:          limit,
+        threshold:      threshold,
+        strategy:       strategy
+      ).call
     end
 
     # Re-run extraction + chunking for an existing document. Uses the

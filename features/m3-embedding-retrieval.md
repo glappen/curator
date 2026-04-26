@@ -36,6 +36,52 @@ plus the "Retrieval Pipeline", "Service Object API", and "Database Schema"
 
 ## Current Work
 
+- [x] **Phase 3 — Vector retrieval + `Curator.search` (vector mode only).**
+   - `Curator::Hit` (`Data.define`) and `Curator::SearchResults`
+     (`Data.define` + `Enumerable`, with `#empty?`, `#size`, `#each`)
+     ship as the public-facing return types.
+   - `Curator::Retrieval::EmbeddingScoped` is a `private` mixin
+     exposing `model_scoped_embeddings(kb)` —
+     `Curator::Embedding.where(embedding_model: kb.embedding_model)`.
+     Vector includes it; keyword (P4) intentionally won't.
+   - `Curator::Retrieval::Vector#call(kb, query_vec, limit:, threshold:)`
+     uses `nearest_neighbors(:embedding, q, distance: "cosine")`,
+     `includes(chunk: { document: {} })` to avoid N+1 on Hit
+     construction, drops below-threshold rows pre-rank, and assigns
+     1-indexed ranks. `score = 1.0 - neighbor_distance`. Empty arrays
+     for nil `query_vec` or non-positive `limit`.
+   - **Service object naming**: dropped the planned `Curator::Search`
+     service-object name — collides with the `Curator::Search`
+     ActiveRecord model on `curator_searches`. Renamed to
+     `Curator::Searcher`; `Curator.search` is the module-level entry
+     and instantiates it. Same pattern `Curator.ingest` uses.
+   - `Curator::Tracing.record(search:, step_type:, payload_builder:)
+     { yield }` is the shared step-row helper. Behavior by
+     `config.trace_level`: `:off` runs the block as-is and writes
+     nothing; `:summary` writes a row with `payload: {}`; `:full`
+     evaluates `payload_builder.(result)`. Errors inside the block
+     get an `:error` row + the error message and re-raise. Sequence
+     allocated via `search.search_steps.count`.
+   - `Curator.search(query, knowledge_base:, limit:, threshold:,
+     strategy:)`: validates query non-blank, validates strategy
+     against the `%i[vector keyword hybrid]` allowlist (full
+     allowlist enforced now, even though P3 only implements
+     `:vector`), raises on `strategy: :keyword` + `threshold:`,
+     resolves KB by instance / slug string / symbol / nil →
+     `default!`. Snapshot `curator_searches` row written before the
+     work runs (chat_id / message_id null), updated with
+     `total_duration_ms` + `:success` after, or `:failed` +
+     `error_message` on `Curator::EmbeddingError`.
+     `config.log_queries = false` skips the row write entirely
+     (`SearchResults#search_id` is nil).
+   - `RubyLLM::Error` / `Neighbor::Error` from query embedding
+     surface as `Curator::EmbeddingError` so callers handle one type.
+   - **Validate (Phase 3 checklist):** all 11 boxes green via
+     `spec/curator/search_spec.rb`,
+     `spec/curator/retrieval/vector_spec.rb`,
+     `spec/curator/tracing_spec.rb`. `bundle exec rspec` 370 ex,
+     0 failures; `bundle exec rubocop` no offenses.
+
 - [x] **Phase 2 — `EmbedChunksJob` real body.**
    - **RubyLLM.embed batching contract verified**: passing an
      `Array<String>` is accepted; the OpenAI provider sends `input:`
@@ -77,45 +123,6 @@ plus the "Retrieval Pipeline", "Service Object API", and "Database Schema"
      failures register tighter stubs that take precedence.
 
 ## Next Steps
-
-- [ ] Phase 3 — Vector retrieval + `Curator.search` (vector mode only)
-   - `Curator::SearchResults` value object
-     (`Data.define(:query, :hits, :duration_ms, :knowledge_base,
-     :search_id)`). `#empty?`, `#each` delegating to `hits`.
-   - `Curator::Hit` value object
-     (`Data.define(:rank, :chunk_id, :document_id, :document_name,
-     :page_number, :text, :score, :source_url)`). Built by
-     retrieval strategies; ranks 1-indexed. Field names mirror
-     the underlying columns (`chunks.page_number`,
-     `documents.source_url`) for grep-ability.
-   - `Curator::Retrieval::EmbeddingScoped` — shared concern (or
-     module) that vector + hybrid include. Provides the scope
-     `Curator::Embedding.where(embedding_model: kb.embedding_model)`,
-     the mid-reembed safety guarantee. Keyword retrieval does
-     **not** include this — it scopes through documents (P4),
-     so `:pending` / `:failed` chunks remain visible to
-     keyword search.
-   - `Curator::Retrieval::Vector#call(kb, query_vec, limit:, threshold:)`:
-     `nearest_neighbors(:embedding, query_vec, distance: "cosine")
-     .limit(limit)`, then drops hits below `threshold` cosine.
-     Builds Hit list with rank assigned in cosine-descending order
-     and `score:` populated.
-   - `Curator.search(query, knowledge_base: nil, limit: nil,
-     threshold: nil, strategy: nil)`:
-     - Default `knowledge_base:` → `KnowledgeBase.default!`.
-     - Resolve KB by instance / slug string / symbol (mirror
-       `Curator.ingest`'s pattern).
-     - Empty / whitespace-only `query` → `ArgumentError`.
-     - Wraps the call in a `curator_searches` row write
-       (status, snapshot config — `chat_id` / `message_id` null on
-       `.search`-only paths). `config.log_queries = false` skips
-       the row write entirely.
-     - `Curator::EmbeddingError` from RubyLLM → search row
-       `:failed`, error re-raised.
-   - Trace steps: `embed_query` (model, input_token_count,
-     duration), `vector_search` (candidate_count, top-rank
-     chunk_ids, duration). Gated by `Curator.config.trace_level`.
-   - **Validate:** see Phase 3 checklist.
 
 - [ ] Phase 4 — Keyword retrieval
    - `Curator::Retrieval::Keyword#call(kb, query, limit:)`:
@@ -325,28 +332,28 @@ spec/
       `failed` chunks present, false on clean :complete docs.
 
 ### Phase 3 — Vector retrieval + `Curator.search`
-- [ ] Empty / whitespace query raises `ArgumentError` before any DB
+- [x] Empty / whitespace query raises `ArgumentError` before any DB
       write — no `curator_searches` row created.
-- [ ] `Curator.search(query, knowledge_base: kb)` returns a
+- [x] `Curator.search(query, knowledge_base: kb)` returns a
       `Curator::SearchResults` with hits ordered by descending
       cosine. `hits.first.rank == 1`.
-- [ ] `threshold:` kwarg overrides the KB default; hits below the
+- [x] `threshold:` kwarg overrides the KB default; hits below the
       override cosine are dropped.
-- [ ] `limit:` kwarg overrides KB.chunk_limit.
-- [ ] KB with zero chunks → empty `hits`, status `:success`,
+- [x] `limit:` kwarg overrides KB.chunk_limit.
+- [x] KB with zero chunks → empty `hits`, status `:success`,
       `curator_searches` row written.
-- [ ] Mid-reembed simulation: insert a chunk with embedding_model
+- [x] Mid-reembed simulation: insert a chunk with embedding_model
       "old-model"; KB.embedding_model is "new-model". Search
       doesn't return that chunk.
-- [ ] `RubyLLM.embed` raising → `Curator::EmbeddingError` re-raised,
+- [x] `RubyLLM.embed` raising → `Curator::EmbeddingError` re-raised,
       `curator_searches` row marked `:failed` with the error
       message.
-- [ ] `config.log_queries = false` → no `curator_searches` row, hits
+- [x] `config.log_queries = false` → no `curator_searches` row, hits
       still returned.
-- [ ] Trace level `:full` → `embed_query` + `vector_search`
+- [x] Trace level `:full` → `embed_query` + `vector_search`
       `curator_search_steps` rows with non-empty payload.
-- [ ] Trace level `:summary` → step rows present, payload `{}`.
-- [ ] Trace level `:off` → no step rows.
+- [x] Trace level `:summary` → step rows present, payload `{}`.
+- [x] Trace level `:off` → no step rows.
 
 ### Phase 4 — Keyword retrieval
 - [ ] `Curator.search(query, knowledge_base: kb, strategy:

@@ -36,43 +36,45 @@ plus the "Retrieval Pipeline", "Service Object API", and "Database Schema"
 
 ## Current Work
 
-- [ ] Phase 2 — `EmbedChunksJob` real body
-   - **First: verify `RubyLLM.embed` batching contract** —
-     does `RubyLLM.embed(array_of_strings, model: ...)` accept
-     arrays and return parallel Embedding objects, or is it
-     single-input only? If single-input, the batching loop
-     dispatches one HTTP call per chunk but keeps
-     `embedding_batch_size` as a back-pressure governor (chunked
-     concurrency, not chunked payload). All downstream P2 work
-     hangs on this — pin it before writing the loop.
-   - Pull `document.chunks.where(status: :pending)` (filtering at the
-     query naturally short-circuits AJ retries — already-embedded
-     chunks are invisible on the second perform; no upsert dance
-     needed).
-   - Batch into `Curator.config.embedding_batch_size` (default 100)
-     groups. For each batch: call `RubyLLM.embed(texts,
-     model: kb.embedding_model)`, persist
-     `curator_embeddings(chunk_id:, embedding:, embedding_model:)`,
-     transition the chunks to `:embedded`. Embedding model is
-     snapshotted per-row so mid-reembed retrieval can filter (Q7).
-   - **Per-chunk rejection**: provider 4xx for one input out of a
-     batch (token overflow, encoding, content moderation) → mark just
-     that chunk `:failed`, continue with the rest of the batch.
-     Provider error message persisted (added column `embed_error
-     text` on `curator_chunks`? — see Phase 1 follow-up below).
-     **Decision pending**: whether per-chunk error text lives in a
-     new column on `curator_chunks` or only in `curator_search_steps`
-     trace rows. Default plan: new `embed_error text nullable`
-     column, surfaced in admin UI's chunk inspector. Track as P2
-     sub-decision.
-   - **Whole-batch failure** (rate-limit, 5xx, network, auth): raise.
-     Active Job retry-with-backoff owns final disposition. Already-
-     embedded chunks are skipped on retry by the `:pending` filter.
-   - After the loop: if every chunk in the document is terminal
-     (`:embedded` ∪ `:failed`), `document.update!(status: :complete)`.
-     `Document#failed_chunk_count` (+ `#partially_embedded?`) computed
-     from the chunks association — no denormalized column.
-   - **Validate:** see Phase 2 checklist.
+- [x] **Phase 2 — `EmbedChunksJob` real body.**
+   - **RubyLLM.embed batching contract verified**: passing an
+     `Array<String>` is accepted; the OpenAI provider sends `input:`
+     straight through and returns parallel embeddings, with `vectors`
+     unwrapped only when the input is a non-array of length 1. So
+     `embedding_batch_size` is a real per-HTTP-call batch, not just
+     concurrency back-pressure.
+   - `embed_error` text column added to `curator_chunks` (template
+     edit + `bin/reset-dummy`); persisted on per-chunk failures,
+     cleared on successful (re-)embed.
+   - Job pulls `document.chunks.where(status: :pending).order(:sequence)`,
+     slices by `Curator.config.embedding_batch_size`, calls
+     `RubyLLM.embed(texts, model: kb.embedding_model)` per batch,
+     persists `curator_embeddings` rows snapshotting `embedding_model`
+     and flips chunks to `:embedded` inside a per-batch transaction.
+   - **Per-chunk rejection**: OpenAI fails the *whole* batch with 400
+     when any one input is bad (no partial-success response). The
+     job rescues `RubyLLM::BadRequestError` /
+     `ContextLengthExceededError` and re-issues per chunk to
+     identify the offending inputs; survivors embed, the bad ones
+     land `:failed` with `embed_error`. Other 4xx errors
+     (`UnauthorizedError`, `ForbiddenError`, `PaymentRequiredError`)
+     are config problems and are *not* in the per-input rescue —
+     they raise so AJ surfaces them.
+   - **Whole-batch failure** (5xx, rate-limit, network) propagates;
+     AJ retries. The `:pending` filter at job start skips chunks
+     already embedded on a partial earlier run.
+   - **Document terminal state**: once no chunks remain `:pending`
+     the doc flips to `:complete`. `Document#failed_chunk_count` +
+     `#partially_embedded?` derive from the chunks association, no
+     denormalized column.
+   - **Smoke + rake test side-effect**: with the real body in place,
+     M2's ingestion smoke spec and the rake adapter-swap spec drive
+     real HTTP. `spec/support/ruby_llm_stubs.rb` ships a
+     `stub_embed` / `stub_embed_error` helper plus a default
+     before-each `stub_embed`, so any spec that walks the full
+     pipeline gets a working /embeddings stub without per-spec
+     wiring. Specs that need to assert call counts or simulate
+     failures register tighter stubs that take precedence.
 
 ## Next Steps
 
@@ -302,24 +304,24 @@ spec/
       numbers.
 
 ### Phase 2 — `EmbedChunksJob` real body
-- [ ] Happy path: ingest a 3-chunk fixture, `perform_enqueued_jobs`,
+- [x] Happy path: ingest a 3-chunk fixture, `perform_enqueued_jobs`,
       every chunk transitions to `:embedded`, every chunk has a
       `curator_embeddings` row with `embedding_model` matching
       `kb.embedding_model`, document `:complete`.
-- [ ] Per-chunk rejection: WebMock returns a 400 for one item in a
+- [x] Per-chunk rejection: WebMock returns a 400 for one item in a
       batch of three; the other two embed cleanly, the rejected
       chunk lands `:failed`, document still progresses to
       `:complete`. `document.failed_chunk_count == 1`.
-- [ ] Whole-batch failure: WebMock returns 503 for the whole batch;
+- [x] Whole-batch failure: WebMock returns 503 for the whole batch;
       job raises, AJ retries, a subsequent successful run completes
       without re-embedding the chunks that succeeded on the first
       partial run (i.e. the `:pending` filter actually short-circuits).
-- [ ] Embedding batch size honored: `config.embedding_batch_size = 2`
+- [x] Embedding batch size honored: `config.embedding_batch_size = 2`
       on a 5-chunk doc → 3 batches (2/2/1), verified via WebMock
       request count.
-- [ ] `EmbedChunksJob` is a no-op if the document was deleted
+- [x] `EmbedChunksJob` is a no-op if the document was deleted
       mid-flight (mirrors P5 of M2's deleted-doc handling).
-- [ ] `Document#partially_embedded?` returns true iff any
+- [x] `Document#partially_embedded?` returns true iff any
       `failed` chunks present, false on clean :complete docs.
 
 ### Phase 3 — Vector retrieval + `Curator.search`

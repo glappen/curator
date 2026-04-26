@@ -13,6 +13,7 @@ class CreateCuratorChunks < ActiveRecord::Migration[7.0]
       t.integer  :char_start,       null: false
       t.integer  :char_end,          null: false
       t.string   :status,            null: false, default: "pending"
+      t.text     :embed_error
 
       # Maintained by Curator::Chunk's after_save callback using the
       # parent KB's tsvector_config. We can't use a generated column —

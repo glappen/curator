@@ -12,7 +12,12 @@ class CreateCuratorKnowledgeBases < ActiveRecord::Migration[7.0]
       t.integer  :chunk_size,           null: false, default: 512
       t.integer  :chunk_overlap,        null: false, default: 50
       t.integer  :chunk_limit,          null: false, default: 5
-      t.decimal  :similarity_threshold, null: false, default: 0.7, precision: 4, scale: 3
+      # Cosine similarity cutoff for vector retrieval. 0.2 is loose
+      # but realistic for OpenAI text-embedding-3-small — relevant
+      # chunks typically score 0.2–0.5, so a higher default
+      # (we initially shipped 0.7) returns empty results in practice.
+      # Operators with stricter corpora should tune up.
+      t.decimal  :similarity_threshold, null: false, default: 0.2, precision: 4, scale: 3
       t.string   :retrieval_strategy,   null: false, default: "hybrid"
       t.string   :tsvector_config,      null: false, default: "english"
       t.boolean  :strict_grounding,     null: false, default: true

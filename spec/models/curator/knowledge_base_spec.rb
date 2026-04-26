@@ -56,6 +56,19 @@ RSpec.describe Curator::KnowledgeBase, type: :model do
       )
       expect(kb.chunk_limit).to eq(5)
     end
+
+    # Real OpenAI text-embedding-3-small cosines for relevant query/
+    # chunk pairs sit in 0.2–0.5; an aggressive default like 0.7
+    # silently filters every result on a fresh install.
+    it "defaults similarity_threshold to 0.2 when unspecified" do
+      kb = described_class.create!(
+        name:            "kb-default-st",
+        slug:            "kb-default-st",
+        embedding_model: "text-embedding-3-small",
+        chat_model:      "gpt-5-mini"
+      )
+      expect(kb.similarity_threshold).to eq(0.2)
+    end
   end
 
   describe "single-default enforcement" do

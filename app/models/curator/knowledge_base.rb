@@ -6,6 +6,17 @@ module Curator
     DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small".freeze
     DEFAULT_CHAT_MODEL      = "gpt-5-mini".freeze
 
+    # The standard text search configurations shipped with Postgres. A
+    # typo'd config would otherwise only surface as a Postgres error from
+    # inside Curator::Chunk's after_save callback at ingest time.
+    # Custom site-installed configs require extending this list.
+    TSVECTOR_CONFIGS = %w[
+      simple arabic armenian basque catalan danish dutch english finnish
+      french german greek hindi hungarian indonesian irish italian
+      lithuanian nepali norwegian portuguese romanian russian serbian
+      spanish swedish tamil turkish yiddish
+    ].freeze
+
     has_many :documents, class_name: "Curator::Document", dependent: :destroy
     has_many :searches,  class_name: "Curator::Search",   dependent: :destroy
 
@@ -18,8 +29,10 @@ module Curator
     validates :chat_model,           presence: true
     validates :chunk_size,           numericality: { only_integer: true, greater_than: 0 }
     validates :chunk_overlap,        numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :chunk_limit,          numericality: { only_integer: true, greater_than: 0 }
     validates :similarity_threshold, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 1 }
     validates :retrieval_strategy,   inclusion: { in: %w[hybrid vector keyword] }
+    validates :tsvector_config,      inclusion: { in: TSVECTOR_CONFIGS }
     validate :chunk_overlap_smaller_than_chunk_size
 
     before_save :unset_prior_default, if: -> { is_default? && is_default_changed? }

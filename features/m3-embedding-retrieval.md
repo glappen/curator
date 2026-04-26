@@ -13,57 +13,28 @@ plus the "Retrieval Pipeline", "Service Object API", and "Database Schema"
 
 ## Completed
 
-_(none yet — M2 closed Phase 7, this milestone starts at P1)_
+- [x] **Phase 1 — KB schema (`chunk_limit`) + dimension-mismatch error + callback-driven `content_tsvector`.**
+   Plan deviation: the plan put `tsvector_config` on each chunk row and
+   used a generated `content_tsvector` column reading that per-row
+   regconfig, but Postgres rejects per-row regconfig in generated
+   columns (`to_tsvector(regconfig, text)` is only IMMUTABLE for a
+   literal). Final shape:
+   - `tsvector_config` stays only on the KB (one language per KB, per
+     the sibling-KB carve-up).
+   - `content_tsvector` is a plain `tsvector` column maintained by an
+     `after_save` callback on `Curator::Chunk` that runs
+     `to_tsvector(?::regconfig, content)` parameterized by
+     `document.knowledge_base.tsvector_config`. Fires only when
+     `saved_change_to_content?`.
+   - `IngestDocumentJob` switched from `Chunk.insert_all!` to
+     per-chunk `Chunk.create!` so the callback fires uniformly for
+     ingest, factories, and admin edits. Cost: N inserts + N tsvector
+     UPDATEs per document instead of 1+1; negligible for typical
+     docs, acceptable for v1.
+   - No trigger, no generated column, no `regconfig` column type, no
+     `schema_format = :sql` — back to plain `:ruby`.
 
 ## Current Work
-
-- [-] Phase 1 — KB schema (`chunk_limit`) + per-chunk tsvector_config + dimension-mismatch error
-   - Add `chunk_limit` (integer, NOT NULL, default 5) to
-     `curator_knowledge_bases` by editing the existing
-     `create_curator_knowledge_bases.rb.tt` template under
-     `lib/generators/curator/install/templates/`. Pre-v1 the schema
-     is still mutable — no additive migration needed. Post-v1 this
-     shortcut goes away (per CLAUDE.md), but for now editing the
-     create template keeps the schema diff in one place.
-   - `Curator::KnowledgeBase` validates
-     `chunk_limit: { numericality: { only_integer: true,
-     greater_than: 0 } }`. Default factory value 5.
-   - **Tsvector config fix** — today
-     `create_curator_chunks.rb.tt` defines the virtual column as
-     `to_tsvector('english'::regconfig, content)`, hard-coding
-     english regardless of the parent KB's `tsvector_config`. So
-     a KB with `tsvector_config: "spanish"` would silently get an
-     english-stemmed index, mismatched against its
-     spanish-parsed queries. Fix by denormalizing the config
-     onto chunks:
-     - Add `tsvector_config string null: false` to
-       `curator_chunks` (edit `create_curator_chunks.rb.tt`).
-     - Change the virtual column to
-       `to_tsvector(tsvector_config::regconfig, content)` — same
-       row, generated-column rules satisfied.
-     - `Curator::Chunk` `before_validation` callback copies
-       `document.knowledge_base.tsvector_config` into the chunk
-       on first save (or set explicitly by the chunker — TBD in
-       P2 wiring).
-     - KB-config flips become a reembed-class operation: the
-       `:all` reembed scope (Phase 6) also rewrites
-       `chunks.tsvector_config` before re-embedding, so the
-       virtual column re-evaluates with the new regconfig.
-     - Carve-up rationale: language-mixed corpora are modeled as
-       sibling KBs (e.g. `support-en` / `support-es`), not one
-       polyglot KB. Per-KB `tsvector_config` stays useful; we
-       just have to honor it on the chunks side.
-   - `Curator::EmbeddingDimensionMismatch < Curator::EmbeddingError`
-     in `lib/curator/errors.rb`. Carries the expected and actual dim
-     for an actionable message ("model 'voyage-3' produces 1024-dim
-     vectors; column is 1536-dim — this requires a schema migration
-     and full reembed").
-   - `bin/reset-dummy` after the template edits land so
-     `spec/dummy/db/**` reflects the new columns before any
-     subsequent specs run.
-   - **Validate:** see Phase 1 checklist below.
-
-## Next Steps
 
 - [ ] Phase 2 — `EmbedChunksJob` real body
    - **First: verify `RubyLLM.embed` batching contract** —
@@ -102,6 +73,8 @@ _(none yet — M2 closed Phase 7, this milestone starts at P1)_
      `Document#failed_chunk_count` (+ `#partially_embedded?`) computed
      from the chunks association — no denormalized column.
    - **Validate:** see Phase 2 checklist.
+
+## Next Steps
 
 - [ ] Phase 3 — Vector retrieval + `Curator.search` (vector mode only)
    - `Curator::SearchResults` value object
@@ -306,22 +279,24 @@ spec/
 ## Validation Strategy
 
 ### Phase 1 — KB schema + tsvector fix + error type
-- [ ] `bin/reset-dummy` succeeds; `spec/dummy/db/schema.rb` shows
+- [x] `bin/reset-dummy` succeeds; `spec/dummy/db/schema.rb` shows
       `chunk_limit` integer NOT NULL default 5 on
-      `curator_knowledge_bases`, and `tsvector_config` string
-      NOT NULL on `curator_chunks`.
-- [ ] `KnowledgeBase.new(chunk_limit: 0).valid?` is false; error on
+      `curator_knowledge_bases`, and `content_tsvector` is a plain
+      `t.tsvector` column on `curator_chunks` (no generated column,
+      no per-chunk `tsvector_config` — that lives only on the KB).
+- [x] `KnowledgeBase.new(chunk_limit: 0).valid?` is false; error on
       `:chunk_limit`.
-- [ ] `KnowledgeBase.create!(...)` without specifying `chunk_limit`
+- [x] `KnowledgeBase.create!(...)` without specifying `chunk_limit`
       uses the column default (5).
-- [ ] Spanish-KB indexing parity: create a KB with
+- [x] Spanish-KB indexing parity: create a KB with
       `tsvector_config: "spanish"`, ingest a chunk containing
       "corriendo", inspect the row's `content_tsvector` — must
       contain the spanish stem `corr`, NOT `corriendo`. Same
       chunk text under an english KB stays as `corriendo` (no
-      english stem). Proves the virtual column reads the
-      per-chunk `tsvector_config`, not a hard-coded literal.
-- [ ] `Curator::EmbeddingDimensionMismatch.new(expected: 1536,
+      english stem). Proves the `after_save` callback parameterizes
+      `to_tsvector` with the parent KB's `tsvector_config`, not a
+      hard-coded literal.
+- [x] `Curator::EmbeddingDimensionMismatch.new(expected: 1536,
       actual: 1024).message` contains the actionable pointer
       ("requires a schema migration and full reembed") plus both
       numbers.

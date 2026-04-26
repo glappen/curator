@@ -112,8 +112,10 @@ module Curator
       when :vector
         query_vec = embed_query(kb, search_row)
         run_vector(kb, query_vec, limit, threshold, search_row)
-      when :keyword, :hybrid
-        raise NotImplementedError, "strategy: #{strategy.inspect} arrives in M3 phase #{strategy == :keyword ? 4 : 5}"
+      when :keyword
+        run_keyword(kb, limit, search_row)
+      when :hybrid
+        raise NotImplementedError, "strategy: :hybrid arrives in M3 phase 5"
       end
     end
 
@@ -136,6 +138,16 @@ module Curator
         payload_builder: ->(hits) { { candidate_count: hits.size, top_chunk_ids: hits.first(5).map(&:chunk_id) } }
       ) do
         Curator::Retrieval::Vector.new.call(kb, query_vec, limit: limit, threshold: threshold)
+      end
+    end
+
+    def run_keyword(kb, limit, search_row)
+      Curator::Tracing.record(
+        search:          search_row,
+        step_type:       :keyword_search,
+        payload_builder: ->(hits) { { candidate_count: hits.size, top_chunk_ids: hits.first(5).map(&:chunk_id) } }
+      ) do
+        Curator::Retrieval::Keyword.new.call(kb, @raw_query, limit: limit)
       end
     end
 

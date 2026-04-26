@@ -11,6 +11,7 @@ class CreateCuratorKnowledgeBases < ActiveRecord::Migration[7.0]
 
       t.integer  :chunk_size,           null: false, default: 512
       t.integer  :chunk_overlap,        null: false, default: 50
+      t.integer  :chunk_limit,          null: false, default: 5
       t.decimal  :similarity_threshold, null: false, default: 0.7, precision: 4, scale: 3
       t.string   :retrieval_strategy,   null: false, default: "hybrid"
       t.string   :tsvector_config,      null: false, default: "english"

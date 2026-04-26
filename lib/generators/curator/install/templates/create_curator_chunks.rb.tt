@@ -10,14 +10,15 @@ class CreateCuratorChunks < ActiveRecord::Migration[7.0]
       t.text    :content,     null: false
       t.integer :token_count, null: false
       t.integer :page_number
-      t.integer :char_start,  null: false
-      t.integer :char_end,    null: false
-      t.string  :status,      null: false, default: "pending"
+      t.integer  :char_start,       null: false
+      t.integer  :char_end,          null: false
+      t.string   :status,            null: false, default: "pending"
 
-      t.virtual :content_tsvector,
-                type:   :tsvector,
-                as:     "to_tsvector('english'::regconfig, content)",
-                stored: true
+      # Maintained by Curator::Chunk's after_save callback using the
+      # parent KB's tsvector_config. We can't use a generated column —
+      # to_tsvector(regconfig, text) is only IMMUTABLE for a literal
+      # regconfig, and we want per-KB language config.
+      t.tsvector :content_tsvector
 
       t.timestamps
     end

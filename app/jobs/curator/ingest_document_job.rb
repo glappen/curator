@@ -108,32 +108,30 @@ module Curator
     end
 
     def persist_chunks!(document, chunks)
-      now  = Time.current
-      rows = chunks.each_with_index.map { |c, i| chunk_row(document, c, i, now) }
+      rows = chunks.each_with_index.map { |c, i| chunk_attrs(document, c, i) }
       validate_chunk_rows!(document, rows)
-      Curator::Chunk.insert_all!(rows)
+      rows.each { |row| Curator::Chunk.create!(row) }
     end
 
-    def chunk_row(document, chunk_data, sequence, timestamp)
+    # Pass `document:` (not `document_id:`) so the after_save tsvector
+    # callback finds the parent association in-memory instead of issuing
+    # a Document + KB SELECT per chunk.
+    def chunk_attrs(document, chunk_data, sequence)
       {
-        document_id: document.id,
+        document:    document,
         sequence:    sequence,
         content:     chunk_data[:content],
         token_count: chunk_data[:token_count],
         char_start:  chunk_data[:char_start],
         char_end:    chunk_data[:char_end],
         page_number: chunk_data[:page_number],
-        status:      "pending",
-        created_at:  timestamp,
-        updated_at:  timestamp
+        status:      "pending"
       }
     end
 
-    # insert_all! skips model validations. This pre-check guards against
-    # a chunker regression emitting bad offsets or empty content that
-    # would otherwise silently land in the DB and only surface at
-    # retrieval time. Kept in-memory (no per-row queries) so it's cheap
-    # for large documents.
+    # Per-chunk create! triggers the after_save tsvector callback but
+    # ActiveRecord's "must be >= 0" message loses the offending value.
+    # This pre-check produces a more diagnostic stage_error.
     NON_NEGATIVE_INTEGER_FIELDS = %i[sequence token_count char_start char_end].freeze
     private_constant :NON_NEGATIVE_INTEGER_FIELDS
 

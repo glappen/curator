@@ -34,6 +34,28 @@ RSpec.describe Curator::KnowledgeBase, type: :model do
     it "rejects unknown retrieval_strategy values" do
       expect(build(:curator_knowledge_base, retrieval_strategy: "semantic")).not_to be_valid
     end
+
+    it "rejects non-positive chunk_limit" do
+      expect(build(:curator_knowledge_base, chunk_limit: 0)).not_to be_valid
+      expect(build(:curator_knowledge_base, chunk_limit: -1)).not_to be_valid
+    end
+
+    it "rejects unknown tsvector_config values" do
+      expect(build(:curator_knowledge_base, tsvector_config: "klingon")).not_to be_valid
+      expect(build(:curator_knowledge_base, tsvector_config: "spanish")).to be_valid
+    end
+  end
+
+  describe "column defaults" do
+    it "defaults chunk_limit to 5 when unspecified" do
+      kb = described_class.create!(
+        name:            "kb-default-cl",
+        slug:            "kb-default-cl",
+        embedding_model: "text-embedding-3-small",
+        chat_model:      "gpt-5-mini"
+      )
+      expect(kb.chunk_limit).to eq(5)
+    end
   end
 
   describe "single-default enforcement" do

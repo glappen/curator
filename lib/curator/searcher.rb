@@ -108,15 +108,20 @@ module Curator
     end
 
     def execute_strategy(kb, strategy, limit, threshold, search_row)
+      # Embed once at the top for any strategy that needs a query
+      # vector. Vector and Hybrid both consume the same `query_vec`;
+      # Keyword ignores it. This guarantees hybrid never re-embeds.
+      query_vec = needs_query_vec?(strategy) ? embed_query(kb, search_row) : nil
+
       case strategy
-      when :vector
-        query_vec = embed_query(kb, search_row)
-        run_vector(kb, query_vec, limit, threshold, search_row)
-      when :keyword
-        run_keyword(kb, limit, search_row)
-      when :hybrid
-        raise NotImplementedError, "strategy: :hybrid arrives in M3 phase 5"
+      when :vector  then run_vector(kb, query_vec, limit, threshold, search_row)
+      when :keyword then run_keyword(kb, limit, search_row)
+      when :hybrid  then run_hybrid(kb, query_vec, limit, threshold, search_row)
       end
+    end
+
+    def needs_query_vec?(strategy)
+      strategy == :vector || strategy == :hybrid
     end
 
     def embed_query(kb, search_row)
@@ -148,6 +153,33 @@ module Curator
         payload_builder: ->(hits) { { candidate_count: hits.size, top_chunk_ids: hits.first(5).map(&:chunk_id) } }
       ) do
         Curator::Retrieval::Keyword.new.call(kb, @raw_query, limit: limit)
+      end
+    end
+
+    # Hybrid emits a single rrf_fusion trace step whose payload
+    # captures the input list lengths and the fused output count
+    # (per Phase 5 spec). We call Vector + Keyword directly here
+    # rather than through Hybrid#call so we can pull the candidate
+    # counts into the trace payload without double-running anything.
+    def run_hybrid(kb, query_vec, limit, threshold, search_row)
+      meta = { vector_count: 0, keyword_count: 0 }
+      Curator::Tracing.record(
+        search:    search_row,
+        step_type: :rrf_fusion,
+        payload_builder: ->(hits) {
+          {
+            vector_candidate_count:  meta[:vector_count],
+            keyword_candidate_count: meta[:keyword_count],
+            fused_count:             hits.size,
+            top_chunk_ids:           hits.first(5).map(&:chunk_id)
+          }
+        }
+      ) do
+        vector_hits  = Curator::Retrieval::Vector.new.call(kb, query_vec, limit: limit, threshold: threshold)
+        keyword_hits = Curator::Retrieval::Keyword.new.call(kb, @raw_query, limit: limit)
+        meta[:vector_count]  = vector_hits.size
+        meta[:keyword_count] = keyword_hits.size
+        Curator::Retrieval::Hybrid.fuse(vector_hits, keyword_hits, limit: limit)
       end
     end
 

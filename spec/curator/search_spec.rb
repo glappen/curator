@@ -259,6 +259,105 @@ RSpec.describe "Curator.search" do
     end
   end
 
+  describe "hybrid retrieval (KB default)" do
+    let(:kb) do
+      create(:curator_knowledge_base,
+             retrieval_strategy:   "hybrid",
+             tsvector_config:      "english",
+             similarity_threshold: 0.0,
+             chunk_limit:          5)
+    end
+
+    # Distinct from the suite-level make_chunk: lets the test specify
+    # the *embedding text* independent of the chunk content, so
+    # vector-only / keyword-only contributors can be modeled cleanly.
+    def make_chunk_split(content:, sequence:, embed_for:)
+      chunk = create(:curator_chunk, document: document, sequence: sequence,
+                                     content: content, status: :embedded)
+      create(:curator_embedding,
+             chunk:           chunk,
+             embedding:       deterministic_vector(embed_for, 1536),
+             embedding_model: kb.embedding_model)
+      chunk
+    end
+
+    it "runs by default (KB strategy=hybrid) and fuses vector + keyword hits" do
+      dual     = make_chunk_split(content: "alpha",       sequence: 0, embed_for: "alpha")
+      vec_only = make_chunk_split(content: "no match",    sequence: 1, embed_for: "alpha")
+      kw_only  = make_chunk_split(content: "alpha alpha", sequence: 2, embed_for: "totally unrelated tokens z")
+
+      # threshold: -1.0 forces all vector hits past the cosine filter
+      # — sidesteps deterministic_vector sign noise so this assertion
+      # is about *fusion behavior*, not about cosine arithmetic.
+      results = Curator.search("alpha", knowledge_base: kb, threshold: -1.0)
+
+      expect(results.knowledge_base.retrieval_strategy).to eq("hybrid")
+      expect(results.hits.first.chunk_id).to               eq(dual.id)
+      expect(results.hits.map(&:chunk_id)).to              include(vec_only.id, kw_only.id)
+      expect(results.hits.map(&:rank)).to                  eq((1..results.size).to_a)
+    end
+
+    it "high threshold empties the vector list and hybrid collapses to keyword-only" do
+      kw_only  = make_chunk_split(content: "alpha alpha",     sequence: 0, embed_for: "totally unrelated tokens z")
+      _filler  = make_chunk_split(content: "different stuff", sequence: 1, embed_for: "yet other words y")
+
+      hi_threshold_ids = Curator.search("alpha", knowledge_base: kb, threshold: 0.99).hits.map(&:chunk_id)
+
+      expect(hi_threshold_ids).to eq([ kw_only.id ])
+    end
+
+    it "score is populated for vector contributors and nil for keyword-only contributors" do
+      dual    = make_chunk_split(content: "alpha",       sequence: 0, embed_for: "alpha")
+      kw_only = make_chunk_split(content: "alpha alpha", sequence: 1, embed_for: "totally unrelated tokens z")
+
+      hits    = Curator.search("alpha", knowledge_base: kb, threshold: 0.5).hits
+      hit_for = ->(id) { hits.find { |h| h.chunk_id == id } }
+
+      expect(hit_for[dual.id].score).to    be_a(Float)
+      expect(hit_for[kw_only.id].score).to be_nil
+    end
+
+    describe "tracing" do
+      around do |ex|
+        original = Curator.config.trace_level
+        ex.run
+      ensure
+        Curator.config.trace_level = original
+      end
+
+      it "writes embed_query + rrf_fusion step rows with input list lengths at :full" do
+        make_chunk(content: "alpha", sequence: 0)
+        Curator.config.trace_level = :full
+
+        Curator.search("alpha", knowledge_base: kb)
+
+        steps = Curator::Search.sole.search_steps.order(:sequence)
+        expect(steps.map(&:step_type)).to eq(%w[embed_query rrf_fusion])
+        expect(steps.last.payload).to     include("vector_candidate_count", "keyword_candidate_count", "fused_count")
+      end
+
+      it "writes both step rows with empty payloads at :summary" do
+        make_chunk(content: "alpha", sequence: 0)
+        Curator.config.trace_level = :summary
+
+        Curator.search("alpha", knowledge_base: kb)
+
+        row = Curator::Search.sole
+        expect(row.search_steps.count).to            eq(2)
+        expect(row.search_steps.pluck(:payload)).to  all(eq({}))
+      end
+
+      it "writes no step rows at :off" do
+        make_chunk(content: "alpha", sequence: 0)
+        Curator.config.trace_level = :off
+
+        Curator.search("alpha", knowledge_base: kb)
+
+        expect(Curator::Search.sole.search_steps.count).to eq(0)
+      end
+    end
+  end
+
   describe "tracing" do
     around do |ex|
       original = Curator.config.trace_level

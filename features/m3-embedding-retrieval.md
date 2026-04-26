@@ -188,52 +188,49 @@ plus the "Retrieval Pipeline", "Service Object API", and "Database Schema"
      block added to `spec/curator/search_spec.rb` (6 ex). `bundle exec
      rspec` 402 ex, 0 failures; `bundle exec rubocop` no offenses.
 
-- [ ] Phase 6 — `Curator.reembed` + `curator:reembed` rake task
-   - `Curator.reembed(knowledge_base:, scope: :stale)` library
-     API. Common control flow for every scope:
-     1. **Resolve work first** — query the chunk set the scope
-        names (see definitions below). If empty, return
-        `{ documents_touched: 0, chunks_touched: 0, scope: }`
-        immediately. No pre-flight, no provider call.
-     2. **Pre-flight only when there's work** — embed a 1-token
-        dummy with `kb.embedding_model`, assert dim matches
-        column, else `Curator::EmbeddingDimensionMismatch`.
-        Avoids paying a provider round-trip on a clean KB.
-     3. Per-document: delete stale embedding rows in a
-        transaction, mark chunks `:pending`, reset
-        `document.status` to `:embedding`, enqueue
-        `EmbedChunksJob`.
-   - Scope definitions:
-     - `:stale` — chunks whose embedding row has
-       `embedding_model ≠ kb.embedding_model`, *plus* chunks in
-       `:failed` (no usable embedding). **Excludes `:pending`** —
-       those are mid-flight from normal ingestion; sweeping them
-       up causes double-work with in-progress `EmbedChunksJob`s.
-     - `:failed` — strict subset of `:stale`: only `Chunk.where(
-       status: :failed)` for the KB. Use when the operator
-       wants to retry just the failures without re-embedding
-       model-stale chunks.
-     - `:all` — every chunk in the KB. Nukes embeddings, all
-       chunks → `:pending`, all documents → `:embedding`. Also
-       rewrites `chunks.tsvector_config` from the KB's current
-       value (this is the path operators take after flipping
-       `kb.tsvector_config` — see Phase 1 fix).
-   - Returns a result struct:
-     `{ documents_touched:, chunks_touched:, scope: }`.
-   - `curator:reembed KB=<slug> [SCOPE=stale|failed|all]` rake task
-     delegates to the library. **When `stale` finds zero chunks**,
-     stdout prints "no stale chunks found — try `SCOPE=failed`
-     for partial-failure cleanup or `SCOPE=all` for a full
-     re-embed". When work is enqueued, prints "re-embedding N
-     chunks across M documents (scope=stale)". Adapter-aware
-     execution mirrors `curator:ingest` (`:async` adapter swaps
-     to `:inline` for the task duration so `bundle exec rake`
-     finishes its own work; real workers left alone).
-   - Admin UI hook is **deferred to M5+** (depends on document
-     management views landing first). Ideation note in this
-     file is the breadcrumb for the dropdown spec when M5
-     reaches Document Management.
-   - **Validate:** see Phase 6 checklist.
+- [x] **Phase 6 — `Curator.reembed` + `curator:reembed` rake task.**
+   - `Curator::Reembed` (orchestrator class, `lib/curator/reembed.rb`)
+     plus module-level `Curator.reembed(knowledge_base:, scope:)`. KB
+     resolution mirrors `Curator.search`'s nil/instance/string/symbol
+     pattern. Returns `Curator::Reembed::Result` (`Data.define` —
+     `documents_touched`, `chunks_touched`, `scope`).
+   - **Resolve work first, pre-flight only on hit**: `scoped_chunks`
+     materializes the doc_id→chunk_id grouping in one query; if total
+     chunks is zero we return early without calling `RubyLLM.embed`.
+     Verified: clean-KB stale runs make zero `/embeddings` requests.
+   - **`:stale` SQL**: `Chunk.joins(:document).where(kb_id).left_joins(
+     :embedding).where("status='failed' OR (embeddings.id IS NOT NULL
+     AND embeddings.embedding_model != ?)")`. Single round-trip; covers
+     both terms with one OR. Excludes `:pending` (no embedding row,
+     status :pending) — verified in spec.
+   - **`:all` re-stems tsvectors**: `update_all` with `to_tsvector(
+     ?::regconfig, content)` parameterized by `kb.tsvector_config`.
+     Uses `update_all` (not the chunk's `after_save` callback) because
+     the callback only fires on content changes, and we want a config
+     flip alone to be enough.
+   - **Per-doc transaction**: `delete_all` embeddings → `update_all`
+     chunks to `:pending` clearing `embed_error` → `update_all`
+     document to `:embedding` → enqueue `EmbedChunksJob` *outside* the
+     transaction (mirrors `Curator.ingest` so the worker can't pick up
+     the doc before commit visibility).
+   - **Pre-flight dim check**: `RubyLLM.embed("a", model: kb.embedding_model)`
+     once, compare `vector_dim` against `Curator::Embedding.columns_hash[
+     "embedding"].sql_type[/\Avector\((\d+)\)\z/, 1].to_i`. Mismatch →
+     `Curator::EmbeddingDimensionMismatch` *before* any row is touched.
+     Verified for all three scopes.
+   - `curator:reembed KB=<slug> [SCOPE=stale|failed|all]` rake task:
+     KB-slug abort, unknown-scope abort, no-work message points at
+     `SCOPE=failed` / `SCOPE=all`, work message reads
+     `re-embedding N chunks across M documents (scope=...)`.
+     Adapter swap (`:async` → `:inline`) mirrors `curator:ingest` to
+     the letter; real-worker adapters left alone.
+   - **Validate (Phase 6 checklist):** all 9 boxes green via
+     `spec/curator/reembed_spec.rb` (16 ex) and the `curator:reembed`
+     block in `spec/tasks/curator_rake_spec.rb` (8 ex). `bundle exec
+     rspec` 422 ex, 0 failures; `bundle exec rubocop` no offenses.
+
+   - Admin UI dropdown is deferred to M5+ (depends on document
+     management views landing first).
 
 - [ ] Phase 7 — End-to-end retrieval smoke + parity sweep
    - `spec/requests/curator/retrieval_smoke_spec.rb` — full
@@ -404,36 +401,39 @@ spec/
       input list lengths.
 
 ### Phase 6 — `Curator.reembed` + rake task
-- [ ] `Curator.reembed(knowledge_base: kb)` (default `scope:
+- [x] `Curator.reembed(knowledge_base: kb)` (default `scope:
       :stale`) on a clean KB (everything matches) → no work,
       result struct shows `chunks_touched: 0`. **Pre-flight
-      embed call is not made** — verify via WebMock that no
+      embed call is not made** — verified via WebMock that no
       `/embeddings` request was issued.
-- [ ] After flipping `kb.embedding_model` → `:stale` re-embeds every
+- [x] After flipping `kb.embedding_model` → `:stale` re-embeds every
       stale chunk; embedding rows end up with the new model.
-- [ ] `:stale` excludes `:pending` chunks: a chunk in `:pending`
+- [x] `:stale` excludes `:pending` chunks: a chunk in `:pending`
       with no embedding row is left alone (no enqueue, no status
       flip), so a concurrent in-flight `EmbedChunksJob` doesn't
       collide with the reembed sweep.
-- [ ] `:failed` scope only touches `:failed` chunks; model-stale
+- [x] `:failed` scope only touches `:failed` chunks; model-stale
       `:embedded` chunks are left as-is.
-- [ ] `:all` scope nukes and re-embeds even up-to-date chunks,
-      and rewrites `chunks.tsvector_config` from the KB's
-      current value (so a `kb.tsvector_config` flip followed by
-      `SCOPE=all` reembed re-stems the corpus).
-- [ ] Pre-flight dim mismatch: stub `RubyLLM.embed` to return a
-      1024-dim vector when column is 1536; on a KB with at least
-      one chunk in scope, `:stale` / `:failed` / `:all` all
-      raise `Curator::EmbeddingDimensionMismatch` *before* any
-      embedding row is touched.
-- [ ] `bundle exec rake curator:reembed KB=default` exits 0 and
-      prints `re-embedding N chunks across M documents`.
-- [ ] `bundle exec rake curator:reembed KB=default` on a no-work KB
+- [x] `:all` scope nukes and re-embeds even up-to-date chunks,
+      and re-stems `content_tsvector` from the KB's current
+      `tsvector_config` (a `kb.tsvector_config` flip followed by
+      `SCOPE=all` re-stems the corpus). Note: drove via
+      `update_all` directly rather than the per-row `tsvector_config`
+      column the original plan named — that column never landed
+      (Phase 1 carve-up keeps `tsvector_config` only on the KB).
+- [x] Pre-flight dim mismatch: stubbing `RubyLLM.embed` to return a
+      1024-dim vector when column is 1536 raises
+      `Curator::EmbeddingDimensionMismatch` for `:stale` / `:failed`
+      / `:all` *before* any embedding row is touched.
+- [x] `bundle exec rake curator:reembed KB=<slug>` prints
+      `re-embedding N chunks across M documents (scope=stale)` when
+      work is enqueued.
+- [x] `bundle exec rake curator:reembed KB=<slug>` on a no-work KB
       prints the SCOPE=failed / SCOPE=all suggestions.
-- [ ] `bundle exec rake curator:reembed KB=default SCOPE=all` works.
-- [ ] Adapter swap: with `queue_adapter: :async` the rake task
-      finishes synchronously; with `queue_adapter: :inline` it
-      doesn't double-invoke.
+- [x] `bundle exec rake curator:reembed KB=<slug> SCOPE=all` works.
+- [x] Adapter swap: with `queue_adapter: :async` the rake task
+      switches to `:inline` for the duration and restores the
+      original adapter; `:inline` is left alone.
 
 ### Phase 7 — End-to-end smoke
 - [ ] `bundle exec rspec` exits 0.

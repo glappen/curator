@@ -90,6 +90,53 @@ namespace :curator do
     exit(1) if counts.fetch(:failed, 0) > 0
   end
 
+  desc "Re-embed chunks in a knowledge base. " \
+       "KB=<slug> [SCOPE=stale|failed|all]"
+  task reembed: :environment do
+    kb_slug = ENV["KB"]
+    abort "KB is required, e.g. KB=default SCOPE=stale" if kb_slug.nil? || kb_slug.empty?
+
+    scope_str = ENV.fetch("SCOPE", "stale")
+    scope_sym = scope_str.to_sym
+    unless Curator::Reembed::SCOPES.include?(scope_sym)
+      abort "SCOPE must be one of #{Curator::Reembed::SCOPES.join('|')} (got #{scope_str.inspect})"
+    end
+
+    kb = Curator::KnowledgeBase.find_by(slug: kb_slug)
+    abort "no knowledge base with slug #{kb_slug.inspect}" if kb.nil?
+
+    # Mirrors curator:ingest's adapter handling: :async dies with the
+    # process, so a "rake & exit" pattern leaves jobs unprocessed. Swap
+    # to :inline for the duration so the task actually finishes its
+    # work; leave real workers alone.
+    adapter_name     = ActiveJob::Base.queue_adapter_name.to_s
+    swap_to_inline   = adapter_name == "async"
+    original_adapter = ActiveJob::Base.queue_adapter
+    if swap_to_inline
+      ActiveJob::Base.queue_adapter = :inline
+      puts "Active Job adapter is :async; switching to :inline for this task so " \
+           "jobs complete before exit (configure a real worker for parallel processing)."
+    end
+
+    begin
+      result = Curator.reembed(knowledge_base: kb, scope: scope_sym)
+    ensure
+      ActiveJob::Base.queue_adapter = original_adapter if swap_to_inline
+    end
+
+    if result.chunks_touched.zero?
+      if scope_sym == :stale
+        puts "no stale chunks found — try `SCOPE=failed` for partial-failure " \
+             "cleanup or `SCOPE=all` for a full re-embed"
+      else
+        puts "no chunks matched scope=#{scope_sym}"
+      end
+    else
+      puts "re-embedding #{result.chunks_touched} chunks across " \
+           "#{result.documents_touched} documents (scope=#{scope_sym})"
+    end
+  end
+
   desc "Re-extract + re-chunk an existing document. DOCUMENT=<id>"
   task reingest: :environment do
     id = ENV["DOCUMENT"]
@@ -102,7 +149,6 @@ namespace :curator do
 end
 
 # Planned (see features/implementation.md):
-#   curator:reembed KB=...
 #   curator:evaluations:export KB=... FORMAT=csv|json
 #   curator:stats
 #   curator:vacuum KB=...

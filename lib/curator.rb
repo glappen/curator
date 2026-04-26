@@ -20,6 +20,7 @@ require "curator/retrieval/vector"
 require "curator/retrieval/keyword"
 require "curator/retrieval/hybrid"
 require "curator/searcher"
+require "curator/reembed"
 
 # Note: `curator/engine` and the `ruby_llm` / `neighbor` requires live in
 # lib/curator-rails.rb, which Bundler.require loads *after* Rails boots.
@@ -137,6 +138,21 @@ module Curator
         threshold:      threshold,
         strategy:       strategy
       ).call
+    end
+
+    # Re-embed chunks in a knowledge base.
+    #
+    # @param knowledge_base [Curator::KnowledgeBase, String, Symbol, nil]
+    # @param scope [:stale, :failed, :all] Default `:stale`.
+    #   - `:stale`  — :failed chunks plus :embedded chunks whose
+    #                 `embedding_model` no longer matches `kb.embedding_model`.
+    #                 Excludes :pending (mid-flight from ingest).
+    #   - `:failed` — only :failed chunks.
+    #   - `:all`    — every chunk; also re-stems `content_tsvector` from
+    #                 the KB's current `tsvector_config`.
+    # @return [Curator::Reembed::Result] documents_touched, chunks_touched, scope
+    def reembed(knowledge_base: nil, scope: :stale)
+      Reembed.new(knowledge_base: knowledge_base, scope: scope).call
     end
 
     # Re-run extraction + chunking for an existing document. Uses the

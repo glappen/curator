@@ -247,6 +247,96 @@ RSpec.describe "curator rake tasks" do
     end
   end
 
+  describe "curator:reembed" do
+    let(:task) { Rake::Task["curator:reembed"] }
+    let!(:kb)  { create(:curator_knowledge_base, slug: "reembed-kb", embedding_model: "text-embedding-3-small") }
+    let!(:document) { create(:curator_document, knowledge_base: kb, status: :complete) }
+
+    after do
+      task.reenable
+      ENV.delete("KB")
+      ENV.delete("SCOPE")
+    end
+
+    it "aborts when KB is missing" do
+      expect { silently { task.invoke } }.to raise_error(SystemExit)
+    end
+
+    it "aborts on an unknown KB slug" do
+      ENV["KB"] = "no-such-kb-#{SecureRandom.hex(4)}"
+      expect { silently { task.invoke } }.to raise_error(SystemExit)
+    end
+
+    it "aborts on an invalid SCOPE" do
+      ENV["KB"]    = kb.slug
+      ENV["SCOPE"] = "bogus"
+      expect { silently { task.invoke } }.to raise_error(SystemExit)
+    end
+
+    it "prints the failed/all suggestions when stale finds no work" do
+      ENV["KB"] = kb.slug
+
+      out, _err = silently { task.invoke }
+
+      expect(out).to include("no stale chunks found")
+      expect(out).to include("SCOPE=failed")
+      expect(out).to include("SCOPE=all")
+    end
+
+    it "prints the re-embed summary when work is enqueued" do
+      chunk = create(:curator_chunk, document: document, sequence: 0, status: :embedded)
+      create(:curator_embedding, chunk: chunk, embedding_model: "old-model")
+
+      ENV["KB"] = kb.slug
+
+      out, _err = silently { task.invoke }
+
+      expect(out).to include("re-embedding 1 chunks across 1 documents (scope=stale)")
+      expect(chunk.reload.status).to eq("pending")
+    end
+
+    it "honors SCOPE=all" do
+      chunk = create(:curator_chunk, document: document, sequence: 0, status: :embedded)
+      create(:curator_embedding, chunk: chunk, embedding_model: kb.embedding_model)
+
+      ENV["KB"]    = kb.slug
+      ENV["SCOPE"] = "all"
+
+      out, _err = silently { task.invoke }
+
+      expect(out).to include("re-embedding 1 chunks across 1 documents (scope=all)")
+    end
+
+    describe "Active Job adapter handling" do
+      it "swaps :async to :inline for the duration of the task and restores it after" do
+        allow(ActiveJob::Base).to receive(:queue_adapter_name).and_return("async")
+        original = ActiveJob::Base.queue_adapter
+
+        chunk = create(:curator_chunk, document: document, sequence: 0, status: :embedded)
+        create(:curator_embedding, chunk: chunk, embedding_model: "old-model")
+
+        ENV["KB"] = kb.slug
+        out, _err = silently { task.invoke }
+
+        expect(out).to include("switching to :inline")
+        expect(ActiveJob::Base.queue_adapter).to eq(original)
+      end
+
+      it "leaves :inline alone (no swap message; job enqueued exactly once)" do
+        allow(ActiveJob::Base).to receive(:queue_adapter_name).and_return("inline")
+
+        chunk = create(:curator_chunk, document: document, sequence: 0, status: :embedded)
+        create(:curator_embedding, chunk: chunk, embedding_model: "old-model")
+
+        ENV["KB"] = kb.slug
+        out, _err = silently { task.invoke }
+
+        expect(out).not_to include("switching to :inline")
+        expect(Curator::EmbedChunksJob).to have_been_enqueued.with(document.id).exactly(:once)
+      end
+    end
+  end
+
   describe "curator:reingest" do
     let(:task)     { Rake::Task["curator:reingest"] }
     let(:kb)       { create(:curator_knowledge_base) }

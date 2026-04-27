@@ -91,7 +91,7 @@ Milestones" → M4, plus the "Service Object API", "Citation System",
    - **No coupling to retrieval or LLM in this phase** — the
      assembler is a pure function over `(kb, hits)`.
 
-- [ ] **Phase 4 — `Curator.ask` non-streaming happy path.**
+- [x] **Phase 4 — `Curator.ask` non-streaming happy path.**
    - `Curator::Asker.new(query, knowledge_base:, limit:, threshold:,
      strategy:, system_prompt:, chat_model:)` orchestrator. KB
      resolution mirrors `Retriever` (instance / slug / symbol /
@@ -295,33 +295,33 @@ spec/
       `Curator::TokenCounter.count(system_prompt_text)`.
 
 ### Phase 4 — `Curator.ask` non-streaming
-- [ ] Happy path: `Curator.ask("...")` against a KB with
+- [x] Happy path: `Curator.ask("...")` against a KB with
       relevant content returns `Curator::Answer` with non-empty
       `answer`, `sources` populated from retrieved hits, and
       `retrieval_id` referencing a `curator_retrievals` row whose
       `chat_id` / `message_id` / `system_prompt_text` /
       `system_prompt_hash` / `strict_grounding` /
       `include_citations` are all populated.
-- [ ] Exactly one `chats` row, one `messages` row with
+- [x] Exactly one `chats` row, one `messages` row with
       `role: "user"` and content == query, and one with
       `role: "assistant"` and content == answer text.
-- [ ] `chats.curator_scope` is nil.
-- [ ] Trace shows `embed_query` + retrieval-strategy step +
+- [x] `chats.curator_scope` is nil.
+- [x] Trace shows `embed_query` + retrieval-strategy step +
       `prompt_assembly` + `llm_call`, in order, all
       `status: :success`.
-- [ ] `chat_model:` override at call time → `chat.model_id`
+- [x] `chat_model:` override at call time → `chat.model_id`
       reflects the override; `curator_retrievals.chat_model`
       snapshot reflects the override; KB's column unchanged.
-- [ ] `system_prompt:` override at call time → assembled
+- [x] `system_prompt:` override at call time → assembled
       prompt uses the override as the instructions half;
       `curator_retrievals.system_prompt_text` reflects the
       override-derived prompt.
-- [ ] RubyLLM provider raising `RubyLLM::Error` →
+- [x] RubyLLM provider raising `RubyLLM::Error` →
       `Curator::LLMError` propagates; `curator_retrievals.status
       == "failed"`, `error_message` populated, `chat_id`
       populated, `message_id` nil (no assistant message ever
       persisted).
-- [ ] `config.log_queries = false` → no `curator_retrievals`
+- [x] `config.log_queries = false` → no `curator_retrievals`
       row, but the Chat / Message / Answer round-trip still
       works. `Answer#retrieval_id` is nil.
 

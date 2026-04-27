@@ -84,8 +84,8 @@ result = Curator.ask("What is our refund policy?", knowledge_base: :support)
 result.answer           # => String
 result.sources          # => Array of retrieved chunks with metadata
 
-# Semantic search without LLM
-results = Curator.search("refund policy", knowledge_base: :legal, limit: 10)
+# Retrieval without LLM (just hits)
+results = Curator.retrieve("refund policy", knowledge_base: :legal, limit: 10)
 
 # Multi-turn persistent chat (retrieval tool-wired)
 chat = Curator.chat(knowledge_base: :support)

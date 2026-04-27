@@ -57,7 +57,7 @@ Milestones" → M4, plus the "Service Object API", "Citation System",
      strategies (`vector` / `keyword` / `hybrid` / blank-query
      guard).
 
-- [ ] **Phase 3 — Prompt assembler (`Curator::Prompt::Assembler`).**
+- [x] **Phase 3 — Prompt assembler (`Curator::Prompt::Assembler`).**
    - `Curator::Prompt::Templates` constants:
      - `DEFAULT_INSTRUCTIONS_WITH_CITATIONS` — citation rule
        ("Reference sources using `[N]` markers"), strict-grounding
@@ -272,26 +272,26 @@ spec/
       logic remains in Retriever.
 
 ### Phase 3 — Prompt assembler
-- [ ] With `kb.include_citations: true` and `kb.system_prompt: nil`,
+- [x] With `kb.include_citations: true` and `kb.system_prompt: nil`,
       assembler returns prompt text containing the default
       citation rule string (`"[N]"` substring present).
-- [ ] With `kb.include_citations: false` and `kb.system_prompt: nil`,
+- [x] With `kb.include_citations: false` and `kb.system_prompt: nil`,
       assembler returns prompt text *without* the citation rule.
-- [ ] With `kb.system_prompt: "Custom instructions."`, prompt
+- [x] With `kb.system_prompt: "Custom instructions."`, prompt
       starts with `"Custom instructions."` followed by the
       Curator-built context block — the override replaces only
       the instructions half.
-- [ ] Context block format: each hit rendered as
+- [x] Context block format: each hit rendered as
       `[<rank>] From "<document_name>" (page <page>):\n<text>`,
       blocks separated by blank lines.
-- [ ] Hits with `page_number: nil` render without the page
+- [x] Hits with `page_number: nil` render without the page
       parenthetical.
-- [ ] Empty `hits:` produces a prompt with instructions but no
+- [x] Empty `hits:` produces a prompt with instructions but no
       context block (assembler doesn't decide refusal — Asker
       does).
-- [ ] `system_prompt_hash` is stable across runs for identical
+- [x] `system_prompt_hash` is stable across runs for identical
       inputs; differs for different KBs / hit sets.
-- [ ] `prompt_token_estimate` is positive integer matching
+- [x] `prompt_token_estimate` is positive integer matching
       `Curator::TokenCounter.count(system_prompt_text)`.
 
 ### Phase 4 — `Curator.ask` non-streaming

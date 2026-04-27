@@ -36,7 +36,7 @@ Milestones" → M4, plus the "Service Object API", "Citation System",
    - **No `Curator.ask` entry point yet** — this phase is just the
      foundational types and schema so later phases compile cleanly.
 
-- [ ] **Phase 2 — Extract shared retrieval core from `Retriever`.**
+- [x] **Phase 2 — Extract shared retrieval core from `Retriever`.**
    - New `Curator::Retrievers::Pipeline` class encapsulates the
      M3 retrieval flow: validate query / strategy, resolve KB,
      compute effective `limit` / `threshold` / `strategy`, embed
@@ -258,16 +258,16 @@ spec/
 - [x] `Curator::Answer#sources` returns `retrieval_results.hits`.
 
 ### Phase 2 — Pipeline extraction
-- [ ] Full M3 spec suite still green — no edits to existing M3
+- [x] Full M3 spec suite still green — no edits to existing M3
       specs (the refactor is observable only via internal
       reorganization).
-- [ ] `Curator::Retrievers::Pipeline` unit specs cover:
+- [x] `Curator::Retrievers::Pipeline` unit specs cover:
       blank query → ArgumentError, unknown strategy →
       ArgumentError, `:keyword` + `threshold:` → ArgumentError,
       `:vector` happy path emits `embed_query` + `vector_search`
       steps, `:keyword` happy path emits only `keyword_search`,
       `:hybrid` emits `embed_query` + `rrf_fusion`.
-- [ ] `Retriever#call` is now thin (validates, opens row,
+- [x] `Retriever#call` is now thin (validates, opens row,
       delegates to Pipeline, closes row). No retrieval-specific
       logic remains in Retriever.
 

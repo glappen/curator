@@ -137,7 +137,7 @@ Milestones" → M4, plus the "Service Object API", "Citation System",
    - `Curator.ask(query, **kwargs)` module method delegates to
      `Asker.new(...).call`. Mirrors the `Curator.retrieve` shape.
 
-- [ ] **Phase 5 — Persistent retrieval-hit history (`curator_retrieval_hits`).**
+- [x] **Phase 5 — Persistent retrieval-hit history (`curator_retrieval_hits`).**
    - **Why this phase exists**: with Phase 4 shipped, a past
      `Curator::Retrieval` row is missing the one thing M5 admin and
      M7 evaluations both need — the hits the LLM actually saw.
@@ -406,44 +406,44 @@ spec/
       works. `Answer#retrieval_id` is nil.
 
 ### Phase 5 — Persistent retrieval-hit history
-- [ ] `bin/reset-dummy` succeeds; `spec/dummy/db/schema.rb` shows
+- [x] `bin/reset-dummy` succeeds; `spec/dummy/db/schema.rb` shows
       `curator_retrieval_hits` with the column set above and a
       unique index on `(retrieval_id, rank)`.
-- [ ] `Curator.ask("...")` writes one `curator_retrieval_hits`
+- [x] `Curator.ask("...")` writes one `curator_retrieval_hits`
       row per returned hit. `rank` matches the in-memory
       `Hit#rank` (1-indexed); `text`, `document_name`,
       `page_number`, `source_url` match the chunk / document
       state at query time; `score` matches for vector and hybrid
       contributors and is nil for keyword-only hits.
-- [ ] `Curator.retrieve("...")` (no LLM) writes hit rows too —
+- [x] `Curator.retrieve("...")` (no LLM) writes hit rows too —
       Pipeline owns the persistence so retrieval-only callers
       get the audit trail. M3 `retriever_spec` gains an
       assertion for this.
-- [ ] `Curator::Answer.from_retrieval(retrieval)` returns an
+- [x] `Curator::Answer.from_retrieval(retrieval)` returns an
       Answer whose `answer`, `sources` (rank, chunk_id,
       document_name, page_number, text, score),
       `retrieval_results.query`, `retrieval_results.knowledge_base`,
       `retrieval_results.duration_ms`, `retrieval_id`, and
       `strict_grounding` match the live Answer returned by the
       original `Curator.ask` call.
-- [ ] After `Curator.reingest(document)` on a doc that
+- [x] After `Curator.reingest(document)` on a doc that
       contributed hits, the `curator_retrieval_hits` rows survive
       with `chunk_id` nil and `text` / `document_name`
       unchanged. Reconstructed Answer still surfaces the
       original hit text.
-- [ ] After `document.destroy`, the retrieval_hits rows survive
+- [x] After `document.destroy`, the retrieval_hits rows survive
       with both `chunk_id` and `document_id` nil; the snapshot
       columns still render. After
       `knowledge_base.destroy`, the cascade takes
       retrievals → retrieval_hits with it (gone).
-- [ ] `Curator::Answer.from_retrieval` raises `ArgumentError`
+- [x] `Curator::Answer.from_retrieval` raises `ArgumentError`
       when called on a row with `message_id: nil` (e.g. a
       `Curator.retrieve`-only row, or a `:failed` ask).
-- [ ] Forcing `RetrievalHit.insert_all` to raise (stub)
+- [x] Forcing `RetrievalHit.insert_all` to raise (stub)
       propagates the error and marks the parent row
       `:failed` via the existing `mark_failed!` wrapper —
       hit persistence is part of the operation, not best-effort.
-- [ ] Pre-Phase-5 retrieval rows (no hit-table rows)
+- [x] Pre-Phase-5 retrieval rows (no hit-table rows)
       reconstruct to an Answer with `sources == []` rather than
       raising — the migration is forward-only and historical
       rows degrade gracefully.

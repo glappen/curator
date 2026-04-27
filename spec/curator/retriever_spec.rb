@@ -154,6 +154,20 @@ RSpec.describe "Curator.retrieve" do
       expect(row.total_duration_ms).to be >= 0
     end
 
+    it "writes one curator_retrieval_hits row per returned Hit" do
+      chunk = make_chunk(content: "alpha beta gamma", sequence: 0)
+
+      results = Curator.retrieve("alpha beta gamma", knowledge_base: kb)
+
+      row = Curator::Retrieval.sole
+      expect(row.retrieval_hits.size).to eq(results.size)
+      hit_row = row.retrieval_hits.order(:rank).first
+      expect(hit_row.rank).to        eq(1)
+      expect(hit_row.chunk_id).to    eq(chunk.id)
+      expect(hit_row.text).to        eq(chunk.content)
+      expect(hit_row.document_name).to eq(document.title)
+    end
+
     it "marks the row :failed on non-EmbeddingError failures and re-raises" do
       # Force the retrieval step to raise something that isn't
       # Curator::EmbeddingError. Without the broad rescue the row

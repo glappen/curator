@@ -25,7 +25,7 @@ deferrals. `features/initial.md` captures product vision.
   lib/curator/            # top-level code
     extractors/           # pluggable Kreuzberg + basic
     chunkers/
-    retrieval/            # vector, keyword, hybrid, rrf
+    retrievers/           # vector, keyword, hybrid, rrf
     prompt/               # assembler + templates
     evaluations/          # exporter
   app/controllers/curator/
@@ -34,17 +34,17 @@ deferrals. `features/initial.md` captures product vision.
   app/jobs/curator/       # ingest + embed jobs
   app/views/curator/
   ```
-- **Value objects**: `Curator::Answer`, `Curator::SearchResults`,
+- **Value objects**: `Curator::Answer`, `Curator::RetrievalResults`,
   `Curator::Chat`, `Curator::Extractors::ExtractionResult`. These are the
   stable public-facing return types.
 - **Errors**: `Curator::EmbeddingError`, `Curator::RetrievalError`,
   `Curator::LLMError` all inherit from a base `Curator::Error`. Fail loud;
-  every failure creates a `curator_searches` row with `status: :failed`.
+  every failure creates a `curator_retrievals` row with `status: :failed`.
 
 ## Key design decisions (so you don't relitigate them)
 
 - **Hard delete with cascade** (KB → documents → chunks → embeddings →
-  searches → evaluations). No soft delete.
+  retrievals → evaluations). No soft delete.
 - **Single fixed-dim embedding column** (dimension chosen at install time via
   `--embedding-dim`, default 1536). Switching models = migration + re-embed.
 - **Heuristic token counter** (char-based, no native deps). Behind
@@ -55,8 +55,8 @@ deferrals. `features/initial.md` captures product vision.
   failure categories (Postgres `text[]`) for negative evals.
 - **Hybrid retrieval is default** (vector + keyword via
   `Neighbor::Reranking.rrf`). Per-KB toggle to vector-only or keyword-only.
-- **Snapshot config on every search** (model, prompt, threshold, chunk_limit
-  captured on `curator_searches` at query time). Do not lose this — v2
+- **Snapshot config on every retrieval** (model, prompt, threshold, chunk_limit
+  captured on `curator_retrievals` at query time). Do not lose this — v2
   analytics depend on it.
 - **Scoped chat UIs** share RubyLLM models but partition via `curator_scope`
   string on `chats`.
@@ -64,7 +64,7 @@ deferrals. `features/initial.md` captures product vision.
 ## Testing notes
 
 - Real Postgres with pgvector for retrieval specs — do **not** mock vector
-  search. Stub LLM HTTP with WebMock.
+  retrieval. Stub LLM HTTP with WebMock.
 - Factories under `spec/factories/`. Fixtures under `spec/fixtures/`.
 - Both extractor adapters (Kreuzberg + basic) must pass the same adapter
   contract suite.

@@ -127,8 +127,8 @@ lib/
 │               ├── create_curator_documents.rb.tt
 │               ├── create_curator_chunks.rb.tt
 │               ├── create_curator_embeddings.rb.tt
-│               ├── create_curator_searches.rb.tt
-│               ├── create_curator_search_steps.rb.tt
+│               ├── create_curator_retrievals.rb.tt
+│               ├── create_curator_retrieval_steps.rb.tt
 │               ├── create_curator_evaluations.rb.tt
 │               └── add_curator_scope_to_chats.rb.tt
 └── tasks/
@@ -144,8 +144,8 @@ app/
     ├── document.rb                         # NEW
     ├── chunk.rb                            # NEW
     ├── embedding.rb                        # NEW
-    ├── search.rb                           # NEW
-    ├── search_step.rb                      # NEW
+    ├── retrieval.rb                           # NEW
+    ├── retrieval_step.rb                      # NEW
     └── evaluation.rb                       # NEW
 spec/
 ├── curator/
@@ -217,7 +217,7 @@ spec/
 - [x] Creating two KBs with identical slug raises `ActiveRecord::RecordInvalid`
 - [x] Evaluation with `failure_categories: ["bogus"]` fails validation
 - [x] Deleting a KB cascades to documents, chunks, embeddings, searches,
-      search_steps, evaluations (zero orphans)
+      retrieval_steps, evaluations (zero orphans)
 
 ### Phase 5 — Seed
 - [x] Fresh DB: `bundle exec rake curator:seed_defaults` creates exactly

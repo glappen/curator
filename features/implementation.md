@@ -46,7 +46,7 @@ curator-rails/
 │   │       └── api/
 │   │           ├── base_controller.rb       # applies API auth hook
 │   │           ├── queries_controller.rb
-│   │           ├── searches_controller.rb
+│   │           ├── retrievals_controller.rb
 │   │           └── streams_controller.rb
 │   ├── jobs/
 │   │   └── curator/
@@ -58,8 +58,8 @@ curator-rails/
 │   │       ├── document.rb
 │   │       ├── chunk.rb
 │   │       ├── embedding.rb
-│   │       ├── search.rb
-│   │       ├── search_step.rb
+│   │       ├── retrieval.rb
+│   │       ├── retrieval_step.rb
 │   │       └── evaluation.rb
 │   ├── views/
 │   │   └── curator/                         # Hotwire + Tailwind views
@@ -73,7 +73,7 @@ curator-rails/
 │   │   ├── engine.rb
 │   │   ├── configuration.rb
 │   │   ├── answer.rb                         # Curator::Answer value object
-│   │   ├── search_results.rb                 # Curator::SearchResults value object
+│   │   ├── retrieval_results.rb              # Curator::RetrievalResults value object
 │   │   ├── chat.rb                           # Curator::Chat wrapper
 │   │   ├── token_counter.rb                  # heuristic (swappable)
 │   │   ├── extractors/
@@ -83,7 +83,7 @@ curator-rails/
 │   │   │   └── extraction_result.rb          # value object
 │   │   ├── chunkers/
 │   │   │   └── paragraph_aware.rb
-│   │   ├── retrieval/
+│   │   ├── retrievers/
 │   │   │   ├── vector.rb
 │   │   │   ├── keyword.rb
 │   │   │   ├── hybrid.rb
@@ -114,7 +114,7 @@ curator-rails/
 ### Curator-owned tables
 
 All prefixed `curator_`. Hard delete with cascade (KB delete → documents →
-chunks → embeddings → searches → evaluations).
+chunks → embeddings → retrievals → evaluations).
 
 #### `curator_knowledge_bases`
 
@@ -189,7 +189,7 @@ Index: HNSW or IVFFlat on `embedding` (configurable; default HNSW on pgvector
 0.5+). Single table, single fixed dimension — swapping embedding dimension
 requires migration + re-embed (documented).
 
-#### `curator_searches`
+#### `curator_retrievals`
 
 Captures a full config snapshot per query so v2 analytics can A/B by
 prompt/model without schema changes.
@@ -198,7 +198,7 @@ prompt/model without schema changes.
 id, knowledge_base_id (FK)
 chat_id                bigint           # FK to RubyLLM chats
 message_id             bigint           # FK to RubyLLM messages
-                                        # (assistant message this search
+                                        # (assistant message this retrieval
                                         # produced)
 query                  text             # user's question
 chat_model             string           # snapshot at query time
@@ -214,14 +214,14 @@ error_message          text nullable
 created_at
 ```
 
-#### `curator_search_steps`
+#### `curator_retrieval_steps`
 
 Structured per-step trace for observability. Gated by
 `config.trace_level` (`:full` | `:summary` | `:off`).
 
 ```
-id, search_id (FK)
-sequence               integer          # ordinal within search
+id, retrieval_id (FK)
+sequence               integer          # ordinal within retrieval
 step_type              string           # embed_query | vector_search
                                         # | keyword_search | rrf_fusion
                                         # | prompt_assembly | llm_call
@@ -235,11 +235,11 @@ error_message          text nullable
 
 #### `curator_evaluations`
 
-Multiple evaluations per search allowed (end-user thumbs + SME review both
+Multiple evaluations per retrieval allowed (end-user thumbs + SME review both
 create rows).
 
 ```
-id, search_id (FK)
+id, retrieval_id (FK)
 rating                 string           # :positive | :negative
 feedback               text nullable
 ideal_answer           text nullable    # golden dataset source
@@ -272,11 +272,11 @@ end
 # => Curator::Answer
 
 # Semantic search only (no LLM call)
-results = Curator.search("refund policy",
+results = Curator.retrieve("refund policy",
                          knowledge_base: :legal,
                          limit: 10,
                          threshold: 0.7)
-# => Curator::SearchResults
+# => Curator::RetrievalResults
 
 # Multi-turn persistent chat (retrieval wired as a RubyLLM tool)
 chat = Curator.chat(knowledge_base: :support)
@@ -297,15 +297,15 @@ Curator.ingest_directory("./docs", knowledge_base: :support)
 
 ```ruby
 class Curator::Answer
-  attr_reader :answer, :search_results, :search_id
-  def sources; search_results.hits; end
+  attr_reader :answer, :retrieval_results, :retrieval_id
+  def sources; retrieval_results.hits; end
 end
 
-class Curator::SearchResults
+class Curator::RetrievalResults
   attr_reader :hits, :query, :duration_ms, :knowledge_base
 end
 
-# Hit shape (shared between Answer#sources and SearchResults#hits)
+# Hit shape (shared between Answer#sources and RetrievalResults#hits)
 {
   rank:          1,
   chunk_id:      305,
@@ -322,7 +322,7 @@ Citation marker `[N]` in LLM prompts equals `hit.rank` — no separate marker
 concept.
 
 Every `Curator.ask` and `Curator.chat#ask` creates a real RubyLLM `Chat` + user
-and assistant `Message` rows. `curator_searches` FKs to the assistant message
+and assistant `Message` rows. `curator_retrievals` FKs to the assistant message
 so traceability is always present, even for one-shot calls.
 
 ---
@@ -349,7 +349,7 @@ If `strict_grounding: true` (default) and retrieval returns zero hits crossing
 the threshold:
 - The prompt assembler emits a system message instructing the LLM to respond
   "I don't have information on that in the knowledge base."
-- `curator_searches` still captures the no-hit state.
+- `curator_retrievals` still captures the no-hit state.
 - `Curator::Answer#sources` is empty.
 
 If `strict_grounding: false`, the LLM is allowed to answer from training data
@@ -391,7 +391,7 @@ If `strict_grounding: false`, the LLM is allowed to answer from training data
 
 Re-ingest triggered from admin UI or `curator:reingest DOCUMENT=123`:
 1. Delete existing chunks + embeddings in a transaction (keeps `curator_documents`
-   row and its historical `curator_searches` links valid).
+   row and its historical `curator_retrievals` links valid).
 2. Run the full pipeline on the stored Active Storage blob.
 
 ### File size and MIME handling
@@ -476,7 +476,7 @@ the default citation template with their own, per KB.
 - **SMEs** — review queries in the admin UI, add feedback, ideal answers, and
   failure categories.
 
-One `curator_searches` row can have many evaluations (end-user thumb + SME
+One `curator_retrievals` row can have many evaluations (end-user thumb + SME
 review + additional reviewers).
 
 ### Rating
@@ -518,7 +518,7 @@ response. Exports respect current admin UI filters (KB, date range, rating,
 evaluator_role, failure_categories — filter matches rows where any selected
 category is present).
 
-Columns: `search_id, query, answer (truncated), knowledge_base, chat_model,
+Columns: `retrieval_id, query, answer (truncated), knowledge_base, chat_model,
 embedding_model, rating, feedback, ideal_answer, failure_categories (semicolon-
 joined in CSV; JSON array in JSON), evaluator_id, evaluator_role, created_at`.
 
@@ -533,9 +533,9 @@ Mounted at `<mount-path>/api/`. Default: `/curator/api/`.
 ```
 POST /curator/api/query              # Q&A, non-streaming
 POST /curator/api/stream             # Q&A, Turbo Streams
-GET  /curator/api/search             # Semantic search
+GET  /curator/api/retrieve           # Retrieval (hits only, no LLM)
 POST /curator/api/evaluations        # Submit user feedback
-                                     # (links to a prior search via query_id)
+                                     # (links to a prior retrieval via query_id)
 ```
 
 All endpoints accept `?knowledge_base=<slug>`. Omitting uses the default KB.
@@ -645,8 +645,8 @@ Creates:
   - `curator_documents`
   - `curator_chunks`
   - `curator_embeddings`
-  - `curator_searches`
-  - `curator_search_steps`
+  - `curator_retrievals`
+  - `curator_retrieval_steps`
   - `curator_evaluations`
   - Adds `curator_scope string nullable` to `chats`
 - `app/controllers/knowledge_controller.rb` (sample — unless `--skip-sample-controller`)
@@ -712,7 +712,7 @@ curator:reembed KB=<slug>               # re-embed all chunks in a KB
                                         # (after embedding model change)
 curator:reingest DOCUMENT=<id>          # re-run full pipeline on one doc
 curator:evaluations:export KB=<slug> FORMAT=<csv|json>
-curator:stats                           # print KB/doc/chunk/search counts
+curator:stats                           # print KB/doc/chunk/retrieval counts
 curator:ingest PATH=<dir> KB=<slug>     # CLI equivalent of Curator.ingest_directory
 curator:vacuum KB=<slug>                # remove orphaned chunks/embeddings
 curator:build_assets                    # (engine maintainers) rebuild curator.css
@@ -745,7 +745,7 @@ Curator.configure do |config|
 
   # Tracing / logging
   config.trace_level = :full     # :full | :summary | :off
-  config.log_queries = true      # create curator_searches rows (can be false
+  config.log_queries = true      # create curator_retrievals rows (can be false
                                  # for privacy-sensitive deployments)
 
   # LLM reliability
@@ -761,13 +761,13 @@ end
 
 ## Error Handling
 
-Fail loud, not silent. Every failure creates a `curator_searches` row with
+Fail loud, not silent. Every failure creates a `curator_retrievals` row with
 `status: :failed` and an `error_message`, so the admin UI surfaces what went
 wrong.
 
 | Failure mode | Behavior |
 |---|---|
-| Query embedding fails | Raise `Curator::EmbeddingError`; search row marked `:failed` |
+| Query embedding fails | Raise `Curator::EmbeddingError`; retrieval row marked `:failed` |
 | DB retrieval fails | Raise `Curator::RetrievalError` |
 | No chunks above threshold | Not a failure; strict_grounding decides behavior |
 | LLM provider 5xx / timeout | Retry `llm_retry_count` times; on final failure raise `Curator::LLMError`. Retrieval steps remain recorded (admin UI shows "retrieval OK, LLM failed") |
@@ -829,16 +829,16 @@ is demo-able end-to-end via CLI).
 - `Curator::Embedding` via `neighbor` gem
 - All retrieval strategies: vector, keyword (tsvector GIN), hybrid (RRF via
   `Neighbor::Reranking.rrf`)
-- `Curator.search` returning `Curator::SearchResults`
+- `Curator.retrieve` returning `Curator::RetrievalResults`
 - `curator:reembed` rake task
 
 ### M4 — Q&A
 - Prompt assembler (`[N]` marker injection, strict-grounding fallback,
   `include_citations` toggle)
 - `Curator.ask` with optional streaming block
-- `Curator::Answer` value object wrapping `SearchResults`
+- `Curator::Answer` value object wrapping `RetrievalResults`
 - RubyLLM Chat + Message persistence per query
-- `curator_searches` + `curator_search_steps` trace capture (respecting
+- `curator_retrievals` + `curator_retrieval_steps` trace capture (respecting
   `config.trace_level`)
 - Error hierarchy (`Curator::EmbeddingError`, `RetrievalError`, `LLMError`)
 
@@ -855,7 +855,7 @@ is demo-able end-to-end via CLI).
 - Streaming infrastructure (Turbo Streams in admin UI, `/api/stream` endpoint)
 - Query Testing Console (live streaming answer + retrieved chunks side-by-side;
   tweak params and re-run)
-- REST API controllers: `/api/query`, `/api/search`, `/api/stream`
+- REST API controllers: `/api/query`, `/api/retrieve`, `/api/stream`
 - Envelope + error format implementation
 - API auth hook integration
 
@@ -871,7 +871,7 @@ is demo-able end-to-end via CLI).
 ### M8 — Persistent Chat
 - `Curator::Chat` wrapper class
 - Retrieval wired as a RubyLLM Tool
-- Tool-call trace capture into `curator_search_steps`
+- Tool-call trace capture into `curator_retrieval_steps`
 - `curator:chat_ui` generator (unscoped) — both single-KB pin (`--kb=slug`) and
   multi-KB selector modes
 
@@ -938,7 +938,7 @@ Captured here so future contributors understand the "why not" behind current
 shape.
 
 - **Message-linked via RubyLLM schema mod** — rejected; Curator owns the link
-  on its side (`curator_searches.message_id`) so RubyLLM's tables stay pristine.
+  on its side (`curator_retrievals.message_id`) so RubyLLM's tables stay pristine.
 - **Variable-dim embedding column or per-KB tables** — rejected; complexity
   without clear v1 benefit. Single fixed-dim column, dim chosen at install.
 - **Soft delete** — rejected for v1; export-then-delete flow covers audit

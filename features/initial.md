@@ -261,7 +261,7 @@ result[:context_count]   # Number of chunks used
 result = Curator.ask("What do we know about X?", knowledge_bases: [:support, :legal])
 
 # Semantic search within a knowledge base
-results = Curator.search("refund policy", knowledge_base: :legal, limit: 10, threshold: 0.7)
+results = Curator.retrieve("refund policy", knowledge_base: :legal, limit: 10, threshold: 0.7)
 
 # Ingest into a specific knowledge base
 Curator.ingest(file, knowledge_base: :support)
@@ -291,7 +291,7 @@ Curator mounts JSON endpoints the host app's frontend can call directly:
 
 ```
 POST /curator/api/query               # Q&A endpoint (non-streaming)
-GET  /curator/api/search              # Semantic search endpoint
+GET  /curator/api/retrieve            # Retrieval endpoint (hits only, no LLM)
 POST /curator/api/stream              # Streaming Q&A via Turbo Streams
 
 # All endpoints accept an optional knowledge_base param
@@ -331,7 +331,7 @@ This scaffolds:
 - `curator_documents` — document metadata, ingestion status, source path, FK to knowledge base
 - `curator_chunks` — chunked text with token counts and position metadata
 - `curator_embeddings` — vector embeddings linked to chunks, with model tracking
-- `curator_searches` — query log with retrieved chunks, scores, timing, and FK to knowledge base
+- `curator_retrievals` — query log with retrieved chunks, scores, timing, and FK to knowledge base
 - `curator_evaluations` — SME ratings, feedback, and ideal answers per query
 
 ### RubyLLM-owned tables (managed by RubyLLM's generator)
@@ -341,7 +341,7 @@ This scaffolds:
 - `tool_calls` — LLM tool invocations with `acts_as_tool_call`
 - `models` — LLM model registry with `acts_as_model`
 
-Curator links `rag_searches` to RubyLLM's `messages` table so every
+Curator links `curator_retrievals` to RubyLLM's `messages` table so every
 production query is traceable back to its full conversation context.
 
 ---

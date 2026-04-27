@@ -22,6 +22,8 @@ require "curator/retrievers/keyword"
 require "curator/retrievers/hybrid"
 require "curator/retrievers/pipeline"
 require "curator/retriever"
+require "curator/prompt/templates"
+require "curator/prompt/assembler"
 require "curator/reembed"
 
 # Note: `curator/engine` and the `ruby_llm` / `neighbor` requires live in

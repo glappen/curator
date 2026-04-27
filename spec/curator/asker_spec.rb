@@ -191,6 +191,75 @@ RSpec.describe "Curator.ask" do
     end
   end
 
+  describe "retrieval-hit persistence + reconstruction" do
+    let!(:chunk) { make_chunk(content: "alpha beta gamma", sequence: 0) }
+
+    it "persists curator_retrieval_hits whose reconstruction matches the live Answer" do
+      live = Curator.ask("alpha beta gamma", knowledge_base: kb)
+
+      reconstructed = Curator::Answer.from_retrieval(Curator::Retrieval.find(live.retrieval_id))
+
+      expect(reconstructed.answer).to            eq(live.answer)
+      expect(reconstructed.strict_grounding).to  eq(live.strict_grounding)
+      expect(reconstructed.sources.size).to      eq(live.sources.size)
+      live.sources.zip(reconstructed.sources).each do |a, b|
+        expect(b.rank).to          eq(a.rank)
+        expect(b.chunk_id).to      eq(a.chunk_id)
+        expect(b.document_name).to eq(a.document_name)
+        expect(b.page_number).to   eq(a.page_number)
+        expect(b.text).to          eq(a.text)
+        expect(b.score).to         be_within(0.0001).of(a.score) if a.score
+      end
+    end
+
+    it "survives Curator.reingest of the source document (chunk_id nil, snapshot intact)" do
+      live = Curator.ask("alpha beta gamma", knowledge_base: kb)
+      hit_row = Curator::Retrieval.find(live.retrieval_id).retrieval_hits.order(:rank).first
+      expect(hit_row.chunk_id).to eq(chunk.id)
+
+      Curator.reingest(chunk.document)
+
+      hit_row.reload
+      expect(hit_row.chunk_id).to    be_nil
+      expect(hit_row.text).to        eq("alpha beta gamma")
+      expect(hit_row.document_name).to eq(chunk.document.title)
+    end
+
+    it "survives document.destroy (chunk_id and document_id nil, snapshot intact)" do
+      live = Curator.ask("alpha beta gamma", knowledge_base: kb)
+      hit_row = Curator::Retrieval.find(live.retrieval_id).retrieval_hits.order(:rank).first
+
+      chunk.document.destroy
+
+      hit_row.reload
+      expect(hit_row.chunk_id).to    be_nil
+      expect(hit_row.document_id).to be_nil
+      expect(hit_row.text).to        eq("alpha beta gamma")
+    end
+
+    it "is destroyed via the cascade when the knowledge_base is destroyed" do
+      Curator.ask("alpha beta gamma", knowledge_base: kb)
+      expect(Curator::RetrievalHit.count).to eq(1)
+
+      kb.destroy
+
+      expect(Curator::RetrievalHit.count).to eq(0)
+      expect(Curator::Retrieval.count).to    eq(0)
+    end
+
+    it "marks the parent retrieval :failed when hit insert raises" do
+      allow(Curator::RetrievalHit).to receive(:insert_all!)
+        .and_raise(ActiveRecord::StatementInvalid, "hit insert boom")
+
+      expect { Curator.ask("alpha beta gamma", knowledge_base: kb) }
+        .to raise_error(ActiveRecord::StatementInvalid, /hit insert boom/)
+
+      row = Curator::Retrieval.sole
+      expect(row).to be_failed
+      expect(row.error_message).to match(/hit insert boom/)
+    end
+  end
+
   describe "config.log_queries = false" do
     around do |ex|
       Curator.config.log_queries = false

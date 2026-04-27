@@ -1,0 +1,34 @@
+class CreateCuratorRetrievalHits < ActiveRecord::Migration[7.0]
+  def change
+    create_table :curator_retrieval_hits do |t|
+      t.references :retrieval,
+                   null: false,
+                   foreign_key: { to_table: :curator_retrievals, on_delete: :cascade },
+                   index: { name: "index_curator_retrieval_hits_on_retrieval_id" }
+
+      # Live FKs are nullify-on-delete: a chunk re-chunked by reingest or a
+      # document destroyed outright leaves the snapshot text intact so the
+      # audit trail survives. Admin UI links to the chunk only when present.
+      t.bigint :chunk_id
+      t.bigint :document_id
+
+      t.integer :rank,  null: false
+      t.decimal :score, precision: 7, scale: 6
+
+      # Snapshot columns: captured at query time so reconstruction works
+      # after downstream chunk/document mutation.
+      t.string  :document_name, null: false
+      t.integer :page_number
+      t.text    :text,          null: false
+      t.string  :source_url
+    end
+
+    add_index :curator_retrieval_hits, [ :retrieval_id, :rank ], unique: true,
+              name: "index_curator_retrieval_hits_on_retrieval_id_and_rank"
+
+    add_foreign_key :curator_retrieval_hits, :curator_chunks,
+                    column: :chunk_id, on_delete: :nullify
+    add_foreign_key :curator_retrieval_hits, :curator_documents,
+                    column: :document_id, on_delete: :nullify
+  end
+end

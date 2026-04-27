@@ -32,9 +32,16 @@ module Curator
 
       # Run the retrieval and return the ordered hits. Caller owns the
       # `retrieval_row` lifecycle (open before the call, close after);
-      # Pipeline only reads it to attach trace step rows.
+      # Pipeline only reads it to attach trace step rows and (when the
+      # row is non-nil) bulk-insert the per-hit audit trail into
+      # `curator_retrieval_hits`. Centralizing the write here means
+      # both `Curator.retrieve` and `Curator.ask` get the same audit
+      # trail through one site, and a failed insert flips the parent
+      # row to `:failed` via the caller's existing `mark_failed!`.
       def call(retrieval_row)
-        execute_strategy(retrieval_row)
+        hits = execute_strategy(retrieval_row)
+        persist_hits!(retrieval_row, hits) if retrieval_row
+        hits
       end
 
       private
@@ -149,6 +156,29 @@ module Curator
           meta[:keyword_count] = keyword_hits.size
           Curator::Retrievers::Hybrid.fuse(vector_hits, keyword_hits, limit: @limit)
         end
+      end
+
+      # Snapshots `text` / `document_name` / `page_number` /
+      # `source_url` so reconstruction survives downstream chunk
+      # re-chunking and document deletion. One round-trip per
+      # retrieval; failure raises and the caller's `mark_failed!`
+      # wrapper flips the parent row to `:failed`.
+      def persist_hits!(retrieval_row, hits)
+        return if hits.empty?
+        rows = hits.map do |h|
+          {
+            retrieval_id:  retrieval_row.id,
+            chunk_id:      h.chunk_id,
+            document_id:   h.document_id,
+            rank:          h.rank,
+            score:         h.score,
+            document_name: h.document_name,
+            page_number:   h.page_number,
+            text:          h.text,
+            source_url:    h.source_url
+          }
+        end
+        Curator::RetrievalHit.insert_all!(rows)
       end
     end
   end

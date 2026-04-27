@@ -42,6 +42,17 @@ RSpec.describe "Curator install migration templates" do
       table:      "curator_retrieval_steps",
       must_have:  [ "step_type", "payload" ]
     },
+    "create_curator_retrieval_hits.rb.tt"  => {
+      class_name: "CreateCuratorRetrievalHits",
+      table:      "curator_retrieval_hits",
+      must_have:  [
+        "to_table: :curator_retrievals, on_delete: :cascade",
+        "[ :retrieval_id, :rank ], unique: true",
+        ":curator_chunks",
+        "on_delete: :nullify",
+        "document_name"
+      ]
+    },
     "create_curator_evaluations.rb.tt"     => {
       class_name: "CreateCuratorEvaluations",
       table:      "curator_evaluations",

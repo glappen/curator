@@ -20,6 +20,7 @@ require "curator/retrievers/embedding_scoped"
 require "curator/retrievers/vector"
 require "curator/retrievers/keyword"
 require "curator/retrievers/hybrid"
+require "curator/retrievers/pipeline"
 require "curator/retriever"
 require "curator/reembed"
 

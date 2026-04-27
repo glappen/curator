@@ -20,6 +20,8 @@ class CreateCuratorRetrievals < ActiveRecord::Migration[7.0]
       t.string  :retrieval_strategy
       t.decimal :similarity_threshold, precision: 4, scale: 3
       t.integer :chunk_limit
+      t.boolean :strict_grounding
+      t.boolean :include_citations
 
       t.integer :total_duration_ms
       t.string  :status,        null: false, default: "success"

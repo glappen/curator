@@ -18,7 +18,7 @@ Milestones" → M4, plus the "Service Object API", "Citation System",
 
 ## Next Steps
 
-- [ ] **Phase 1 — Schema additions + value objects + error wiring.**
+- [x] **Phase 1 — Schema additions + value objects + error wiring.**
    - Edit `create_curator_retrievals.rb.tt` to add two snapshot
      columns: `strict_grounding boolean` and
      `include_citations boolean`, both nullable (matches the existing
@@ -246,16 +246,16 @@ spec/
 ## Validation Strategy
 
 ### Phase 1 — Schema + Answer + error wiring
-- [ ] `bin/reset-dummy` succeeds; `spec/dummy/db/schema.rb` shows
+- [x] `bin/reset-dummy` succeeds; `spec/dummy/db/schema.rb` shows
       `strict_grounding boolean` and `include_citations boolean`
       (both nullable) on `curator_retrievals`.
-- [ ] `Curator::Answer.new(answer: "x", retrieval_results:
+- [x] `Curator::Answer.new(answer: "x", retrieval_results:
       <empty RetrievalResults>, retrieval_id: 1, strict_grounding: true)
       .refused?` is true.
-- [ ] Same with `strict_grounding: false` is false.
-- [ ] Same with non-empty retrieval_results regardless of
+- [x] Same with `strict_grounding: false` is false.
+- [x] Same with non-empty retrieval_results regardless of
       strict_grounding is false.
-- [ ] `Curator::Answer#sources` returns `retrieval_results.hits`.
+- [x] `Curator::Answer#sources` returns `retrieval_results.hits`.
 
 ### Phase 2 — Pipeline extraction
 - [ ] Full M3 spec suite still green — no edits to existing M3

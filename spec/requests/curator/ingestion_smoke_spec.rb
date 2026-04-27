@@ -2,12 +2,12 @@ require "rails_helper"
 require "tmpdir"
 require "fileutils"
 
-# Phase 7 end-to-end smoke for M2: drives Curator.ingest /
+# End-to-end smoke for the ingest pipeline: drives Curator.ingest /
 # ingest_directory / reingest against the dummy app and runs the full
-# IngestDocumentJob → EmbedChunksJob chain inline. EmbedChunksJob is
-# still M2's stub (status flip to :complete, no real embeddings) — M3
-# replaces the body. This spec is the contract that says the M2 plumbing
-# is wired end-to-end.
+# IngestDocumentJob → EmbedChunksJob chain inline. With M3 landed, a
+# document at :complete now means real embeddings exist for every
+# chunk, not just a status flip — assertions enforce that contract via
+# the embedding-row count, not by inspecting the job internals.
 RSpec.describe "Curator ingestion end-to-end smoke", type: :request do
   include ActiveJob::TestHelper
 
@@ -34,6 +34,7 @@ RSpec.describe "Curator ingestion end-to-end smoke", type: :request do
     expect(document.status).to eq("complete")
     expect(document.stage_error).to be_nil
     expect(document.chunks.count).to be >= 1
+    expect(Curator::Embedding.where(chunk: document.chunks).count).to eq(document.chunks.count)
 
     first = document.chunks.order(:sequence).first
     expect(first.sequence).to eq(0)
@@ -97,6 +98,7 @@ RSpec.describe "Curator ingestion end-to-end smoke", type: :request do
         doc = r.document.reload
         expect(doc.status).to eq("complete")
         expect(doc.chunks.count).to be >= 1
+        expect(Curator::Embedding.where(chunk: doc.chunks).count).to eq(doc.chunks.count)
       end
 
       second_results = Curator.ingest_directory(dir)
@@ -121,5 +123,6 @@ RSpec.describe "Curator ingestion end-to-end smoke", type: :request do
     new_chunk_ids = document.chunks.pluck(:id)
     expect(new_chunk_ids).not_to be_empty
     expect(new_chunk_ids & original_chunk_ids).to be_empty
+    expect(Curator::Embedding.where(chunk_id: new_chunk_ids).count).to eq(new_chunk_ids.size)
   end
 end

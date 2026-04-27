@@ -232,22 +232,28 @@ plus the "Retrieval Pipeline", "Service Object API", and "Database Schema"
    - Admin UI dropdown is deferred to M5+ (depends on document
      management views landing first).
 
-- [ ] Phase 7 — End-to-end retrieval smoke + parity sweep
-   - `spec/requests/curator/retrieval_smoke_spec.rb` — full
-     pipeline: ingest fixtures → `perform_enqueued_jobs` (real
-     embed pipeline, RubyLLM stubbed at HTTP) → `Curator.search`
-     across all three strategies, asserting non-empty hits, rank
-     monotonicity, snapshot row presence. Reembed scope=all on the
-     KB; assert all chunks transition through `:pending` →
-     `:embedded`, document back to `:complete`, search still works
-     against the new vectors.
-   - Update `spec/requests/curator/ingestion_smoke_spec.rb`'s
-     "advances doc to :complete" assertion: now `:complete` means
-     real embeddings present (was: stub flip). Test the
-     observable contract — count of embedding rows == count of
-     chunks — not the implementation.
-   - **Validate:** full `bundle exec rspec --format progress` +
-     `bundle exec rubocop` green.
+- [x] **Phase 7 — End-to-end retrieval smoke + parity sweep.**
+   - `spec/requests/curator/retrieval_smoke_spec.rb` ingests
+     `sample.md` + `sample.csv` through the real
+     IngestDocumentJob → EmbedChunksJob chain (suite-level
+     deterministic embed stub), then asserts: every doc lands at
+     `:complete` with one embedding row per chunk, all snapshotting
+     `kb.embedding_model`; `Curator.search` returns ranked hits and
+     a `success` snapshot row for each of `:vector` / `:keyword` /
+     `:hybrid` (keyword path verified to skip the embed API via
+     `WebMock.reset_executed_requests!`); a full reembed `scope:
+     :all` round trip nukes and rewrites every embedding row (no
+     ID overlap), drives all chunks back to `:embedded` and docs
+     to `:complete`, and re-search keeps working.
+   - `spec/requests/curator/ingestion_smoke_spec.rb` upgraded to
+     the post-M3 contract: `:complete` now requires
+     `Embedding.where(chunk: doc.chunks).count == doc.chunks.count`
+     across the single-file, directory-walk, and reingest specs.
+     Header comment retired the "EmbedChunksJob is still M2's stub"
+     wording.
+   - **Validate:** `bundle exec rspec --format progress` 430 ex,
+     0 failures; `bundle exec rubocop` no offenses. **M3
+     complete.**
 
 ## Files Under Development
 

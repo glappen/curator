@@ -83,8 +83,8 @@ RSpec.describe Curator::Generators::InstallGenerator, type: :generator do
       create_curator_documents
       create_curator_chunks
       create_curator_embeddings
-      create_curator_searches
-      create_curator_search_steps
+      create_curator_retrievals
+      create_curator_retrieval_steps
       create_curator_evaluations
       add_curator_scope_to_chats
     ].each do |name|

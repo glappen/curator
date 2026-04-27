@@ -74,10 +74,10 @@ Curator.configure do |config|
   # Tracing / logging
   # ============================================================
 
-  # How much detail to persist on `curator_search_steps` per search.
+  # How much detail to persist on `curator_retrieval_steps` per retrieval.
   # :full    — every retrieval, rerank, and prompt step with payload
   # :summary — step_type + timing only; payload omitted
-  # :off     — no search_steps rows written
+  # :off     — no retrieval_steps rows written
   # config.trace_level = :full
 
   # Log all SQL issued by Curator at DEBUG level. Off by default in production.
@@ -87,7 +87,7 @@ Curator.configure do |config|
   # Reliability
   # ============================================================
   #
-  # Curator fails loud: every failure creates a `curator_searches` row with
+  # Curator fails loud: every failure creates a `curator_retrievals` row with
   # `status: :failed`. There's no silent retry or degraded mode.
 
   # (No additional knobs yet — see #llm_retry_count above for the one retry hook.)

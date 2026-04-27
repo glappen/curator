@@ -145,18 +145,18 @@ RSpec.describe Curator::KnowledgeBase, type: :model do
       chunk    = create(:curator_chunk, document: document)
       create(:curator_embedding, chunk: chunk)
 
-      search = create(:curator_search, knowledge_base: kb)
-      create(:curator_search_step, search: search)
-      create(:curator_evaluation, search: search)
+      retrieval = create(:curator_retrieval, knowledge_base: kb)
+      create(:curator_retrieval_step, retrieval: retrieval)
+      create(:curator_evaluation, retrieval: retrieval)
 
       kb.destroy!
 
-      expect(Curator::Document.count).to    eq(0)
-      expect(Curator::Chunk.count).to       eq(0)
-      expect(Curator::Embedding.count).to   eq(0)
-      expect(Curator::Search.count).to      eq(0)
-      expect(Curator::SearchStep.count).to  eq(0)
-      expect(Curator::Evaluation.count).to  eq(0)
+      expect(Curator::Document.count).to       eq(0)
+      expect(Curator::Chunk.count).to          eq(0)
+      expect(Curator::Embedding.count).to      eq(0)
+      expect(Curator::Retrieval.count).to      eq(0)
+      expect(Curator::RetrievalStep.count).to  eq(0)
+      expect(Curator::Evaluation.count).to     eq(0)
     end
   end
 end

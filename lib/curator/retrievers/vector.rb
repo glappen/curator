@@ -1,5 +1,5 @@
 module Curator
-  module Retrieval
+  module Retrievers
     # Pure-vector retrieval: cosine over the pgvector HNSW index, gated
     # by the KB's current `embedding_model` so a mid-reembed window can't
     # serve cross-model cosines. `threshold` is a cosine-similarity

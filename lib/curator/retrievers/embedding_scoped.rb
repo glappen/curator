@@ -1,5 +1,5 @@
 module Curator
-  module Retrieval
+  module Retrievers
     # Mid-reembed safety: vector + hybrid only see embeddings whose
     # `embedding_model` column still matches the KB's current
     # `embedding_model`. During a model swap reembed, in-flight

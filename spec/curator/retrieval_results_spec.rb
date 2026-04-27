@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Curator::SearchResults do
+RSpec.describe Curator::RetrievalResults do
   let(:kb)  { build_stubbed(:curator_knowledge_base) }
   let(:hit) do
     Curator::Hit.new(
@@ -10,7 +10,7 @@ RSpec.describe Curator::SearchResults do
   end
 
   def results(hits)
-    described_class.new(query: "q", hits: hits, duration_ms: 12, knowledge_base: kb, search_id: 99)
+    described_class.new(query: "q", hits: hits, duration_ms: 12, knowledge_base: kb, retrieval_id: 99)
   end
 
   it "is empty when hits is empty" do
@@ -37,6 +37,6 @@ RSpec.describe Curator::SearchResults do
     expect(r.query).to          eq("q")
     expect(r.duration_ms).to    eq(12)
     expect(r.knowledge_base).to eq(kb)
-    expect(r.search_id).to      eq(99)
+    expect(r.retrieval_id).to   eq(99)
   end
 end

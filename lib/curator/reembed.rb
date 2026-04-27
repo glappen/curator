@@ -102,7 +102,7 @@ module Curator
         expected: expected, actual: actual, model: @kb.embedding_model
       )
     rescue RubyLLM::Error, Neighbor::Error => e
-      # Mirror Searcher#embed_query: provider/network failures during
+      # Mirror Retriever#embed_query: provider/network failures during
       # the pre-flight surface as Curator::EmbeddingError so callers
       # only have to rescue Curator's error hierarchy.
       raise Curator::EmbeddingError,

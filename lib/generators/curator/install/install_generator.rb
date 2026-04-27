@@ -50,10 +50,10 @@ module Curator
                            "db/migrate/create_curator_chunks.rb"
         migration_template "create_curator_embeddings.rb.tt",
                            "db/migrate/create_curator_embeddings.rb"
-        migration_template "create_curator_searches.rb.tt",
-                           "db/migrate/create_curator_searches.rb"
-        migration_template "create_curator_search_steps.rb.tt",
-                           "db/migrate/create_curator_search_steps.rb"
+        migration_template "create_curator_retrievals.rb.tt",
+                           "db/migrate/create_curator_retrievals.rb"
+        migration_template "create_curator_retrieval_steps.rb.tt",
+                           "db/migrate/create_curator_retrieval_steps.rb"
         migration_template "create_curator_evaluations.rb.tt",
                            "db/migrate/create_curator_evaluations.rb"
         migration_template "add_curator_scope_to_chats.rb.tt",

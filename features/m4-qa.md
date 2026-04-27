@@ -137,7 +137,79 @@ Milestones" → M4, plus the "Service Object API", "Citation System",
    - `Curator.ask(query, **kwargs)` module method delegates to
      `Asker.new(...).call`. Mirrors the `Curator.retrieve` shape.
 
-- [ ] **Phase 5 — Streaming block.**
+- [ ] **Phase 5 — Persistent retrieval-hit history (`curator_retrieval_hits`).**
+   - **Why this phase exists**: with Phase 4 shipped, a past
+     `Curator::Retrieval` row is missing the one thing M5 admin and
+     M7 evaluations both need — the hits the LLM actually saw.
+     Trace `top_chunk_ids` carries first-five chunk IDs at
+     `:full` only, no scores, no rank-beyond-5, and breaks the
+     moment a chunk is re-chunked or its document is deleted. A
+     real audit trail needs its own table.
+   - New `create_curator_retrieval_hits.rb.tt` migration template:
+     ```
+     t.references :retrieval, null: false,
+                  foreign_key: { to_table: :curator_retrievals, on_delete: :cascade }
+     t.bigint  :chunk_id                               # nullable
+     t.bigint  :document_id                            # nullable
+     t.integer :rank,           null: false
+     t.decimal :score, precision: 7, scale: 6          # nullable; keyword-only is nil
+     t.string  :document_name,  null: false            # snapshot
+     t.integer :page_number                            # snapshot
+     t.text    :text,           null: false            # snapshot
+     t.string  :source_url                             # snapshot
+     add_index [:retrieval_id, :rank], unique: true
+     add_foreign_key :curator_retrieval_hits, :curator_chunks,
+                     column: :chunk_id,    on_delete: :nullify
+     add_foreign_key :curator_retrieval_hits, :curator_documents,
+                     column: :document_id, on_delete: :nullify
+     ```
+     `document_name` / `page_number` / `text` / `source_url` are
+     snapshotted at query time so the row survives downstream
+     `Curator.reingest` (which destroys + recreates chunks) and
+     `document.destroy`. Both FKs nullify-on-delete — `chunk_id`
+     becomes nil when the chunk is gone, but the snapshot text
+     keeps the hit reconstructable.
+   - `Curator::RetrievalHit` AR model: `belongs_to :retrieval`,
+     `belongs_to :chunk, optional: true`,
+     `belongs_to :document, optional: true`. Add
+     `has_many :retrieval_hits, dependent: :destroy` on
+     `Curator::Retrieval`.
+   - **Pipeline owns the write, not Asker / Retriever.**
+     `Curator::Retrievers::Pipeline#call` bulk-inserts via
+     `Curator::RetrievalHit.insert_all(rows)` immediately before
+     returning, when `retrieval_row` is non-nil. One round-trip per
+     ask; failure raises and propagates so the existing
+     `mark_failed!` wrapper flips the row to `:failed`. Centralizing
+     the write here means `Curator.retrieve` *also* gets the audit
+     trail with no duplication — operators using retrieval-only
+     flows (M5 query console, future API endpoints) get the same
+     history shape.
+   - New `Curator::Answer.from_retrieval(retrieval)` class method
+     (and `Curator::Retrieval#to_answer` sugar):
+     - `answer` from `retrieval.message.content`.
+     - `retrieval_results.hits` from
+       `retrieval.retrieval_hits.order(:rank).map { |h| Curator::Hit.new(...) }`.
+     - `retrieval_results.duration_ms` / `knowledge_base` /
+       `query` / `retrieval_id` from the row's snapshot columns.
+     - `strict_grounding` from `retrieval.strict_grounding` snapshot.
+     - Raises `ArgumentError` if `retrieval.message_id.nil?` —
+       failed asks and `Curator.retrieve`-only rows have no Answer
+       to reconstruct (the row has hits but no assistant text).
+   - **Forward-only**: pre-Phase-5 `curator_retrievals` rows have no
+     hit rows and reconstruct to an Answer with `sources == []`. No
+     backfill — the trace `top_chunk_ids` payload is too lossy and
+     dev/staging rows aren't worth a migration script.
+   - **Validate**: round-trip parity — `Curator.ask(...)` →
+     `Curator::Answer.from_retrieval(Curator::Retrieval.find(answer.retrieval_id))`
+     returns an Answer whose `answer`, `sources` (rank, chunk_id,
+     document_name, page_number, text, score), and
+     `strict_grounding` match the original. `Curator.reingest` on
+     the source document afterwards leaves the hit text intact and
+     flips `chunk_id` to nil. `Curator.retrieve` writes hits too
+     (M3 `retriever_spec` gains a hit-row assertion). Hit insert
+     failure marks the row `:failed`.
+
+- [ ] **Phase 6 — Streaming block.**
    - `Asker#call(&block)` accepts an optional block. When given,
      the LLM call becomes
      `chat.with_instructions(system_prompt_text).ask(query) do
@@ -163,7 +235,7 @@ Milestones" → M4, plus the "Service Object API", "Citation System",
      used or not — RubyLLM's stream accumulator builds the final
      `Message#content` regardless.
 
-- [ ] **Phase 6 — Strict-grounding refusal path.**
+- [ ] **Phase 7 — Strict-grounding refusal path.**
    - When `pipeline_hits.empty? && kb.strict_grounding`, Asker
      skips the LLM entirely:
      - Emits the `prompt_assembly` trace step (still useful — it
@@ -189,7 +261,7 @@ Milestones" → M4, plus the "Service Object API", "Citation System",
      column once operators ask; the column doesn't earn its
      keep yet (zero feedback signal pre-v1).
 
-- [ ] **Phase 7 — End-to-end Q&A smoke + parity sweep.**
+- [ ] **Phase 8 — End-to-end Q&A smoke + parity sweep.**
    - `spec/requests/curator/ask_smoke_spec.rb`: full chain
      `Curator.ingest` → IngestDocumentJob → EmbedChunksJob (suite
      `stub_embed`, plus a new `stub_chat_completion` for
@@ -202,7 +274,9 @@ Milestones" → M4, plus the "Service Object API", "Citation System",
      prompt uses non-citing template). Confirms one `Chat` +
      two `Message` rows + one `curator_retrievals` row (with
      `chat_id` / `message_id` / `system_prompt_*` populated)
-     per ask.
+     per ask, plus N `curator_retrieval_hits` rows whose
+     reconstruction via `Curator::Answer.from_retrieval` matches
+     the live Answer.
    - **M3 retrieval smoke spec stays green** — Phase 2's
      extraction is a pure refactor, M3 specs assert no behavior
      change beyond Pipeline being where the work happens.
@@ -216,27 +290,33 @@ Milestones" → M4, plus the "Service Object API", "Citation System",
 ## Files Under Development
 
 ```
+app/models/curator/
+├── retrieval.rb                               # add has_many :retrieval_hits (Phase 5)
+└── retrieval_hit.rb                           # NEW AR model (Phase 5)
 lib/
 ├── curator.rb                                 # add Curator.ask, require curator/asker, prompt/*, answer
 ├── curator/
-│   ├── answer.rb                              # NEW Data.define
+│   ├── answer.rb                              # Data.define + .from_retrieval (Phase 5)
 │   ├── asker.rb                               # NEW orchestrator
 │   ├── prompt/
 │   │   ├── assembler.rb                       # NEW pure-function assembler
 │   │   └── templates.rb                       # NEW constants (DEFAULT_INSTRUCTIONS_*, REFUSAL_MESSAGE)
-│   ├── retrieval/
-│   │   └── pipeline.rb                        # NEW shared retrieval core (factored out of Retriever)
-│   └── searcher.rb                            # delegates retrieval flow to Pipeline
+│   ├── retrievers/
+│   │   └── pipeline.rb                        # extracted (Phase 2); bulk-inserts hits (Phase 5)
+│   └── retriever.rb                           # row-lifecycle wrapper around Pipeline
 └── generators/curator/install/templates/
-    └── create_curator_retrievals.rb.tt          # add strict_grounding + include_citations columns
+    ├── create_curator_retrievals.rb.tt        # add strict_grounding + include_citations columns
+    └── create_curator_retrieval_hits.rb.tt    # NEW (Phase 5)
 spec/
 ├── curator/
-│   ├── answer_spec.rb                         # NEW
+│   ├── answer_spec.rb                         # add .from_retrieval coverage (Phase 5)
 │   ├── asker_spec.rb                          # NEW — Curator.ask public API + Asker behaviors
+│   ├── models/
+│   │   └── retrieval_hit_spec.rb              # NEW (Phase 5)
 │   ├── prompt/
 │   │   └── assembler_spec.rb                  # NEW — pure-function tests
-│   └── retrieval/
-│       └── pipeline_spec.rb                   # NEW — covers what retriever_spec used to test
+│   └── retrievers/
+│       └── pipeline_spec.rb                   # add hit-write assertion (Phase 5)
 ├── requests/curator/
 │   └── ask_smoke_spec.rb                      # NEW E2E
 └── support/
@@ -325,7 +405,50 @@ spec/
       row, but the Chat / Message / Answer round-trip still
       works. `Answer#retrieval_id` is nil.
 
-### Phase 5 — Streaming block
+### Phase 5 — Persistent retrieval-hit history
+- [ ] `bin/reset-dummy` succeeds; `spec/dummy/db/schema.rb` shows
+      `curator_retrieval_hits` with the column set above and a
+      unique index on `(retrieval_id, rank)`.
+- [ ] `Curator.ask("...")` writes one `curator_retrieval_hits`
+      row per returned hit. `rank` matches the in-memory
+      `Hit#rank` (1-indexed); `text`, `document_name`,
+      `page_number`, `source_url` match the chunk / document
+      state at query time; `score` matches for vector and hybrid
+      contributors and is nil for keyword-only hits.
+- [ ] `Curator.retrieve("...")` (no LLM) writes hit rows too —
+      Pipeline owns the persistence so retrieval-only callers
+      get the audit trail. M3 `retriever_spec` gains an
+      assertion for this.
+- [ ] `Curator::Answer.from_retrieval(retrieval)` returns an
+      Answer whose `answer`, `sources` (rank, chunk_id,
+      document_name, page_number, text, score),
+      `retrieval_results.query`, `retrieval_results.knowledge_base`,
+      `retrieval_results.duration_ms`, `retrieval_id`, and
+      `strict_grounding` match the live Answer returned by the
+      original `Curator.ask` call.
+- [ ] After `Curator.reingest(document)` on a doc that
+      contributed hits, the `curator_retrieval_hits` rows survive
+      with `chunk_id` nil and `text` / `document_name`
+      unchanged. Reconstructed Answer still surfaces the
+      original hit text.
+- [ ] After `document.destroy`, the retrieval_hits rows survive
+      with both `chunk_id` and `document_id` nil; the snapshot
+      columns still render. After
+      `knowledge_base.destroy`, the cascade takes
+      retrievals → retrieval_hits with it (gone).
+- [ ] `Curator::Answer.from_retrieval` raises `ArgumentError`
+      when called on a row with `message_id: nil` (e.g. a
+      `Curator.retrieve`-only row, or a `:failed` ask).
+- [ ] Forcing `RetrievalHit.insert_all` to raise (stub)
+      propagates the error and marks the parent row
+      `:failed` via the existing `mark_failed!` wrapper —
+      hit persistence is part of the operation, not best-effort.
+- [ ] Pre-Phase-5 retrieval rows (no hit-table rows)
+      reconstruct to an Answer with `sources == []` rather than
+      raising — the migration is forward-only and historical
+      rows degrade gracefully.
+
+### Phase 6 — Streaming block
 - [ ] `Curator.ask("...") { |delta| collected << delta }` → the
       block is called multiple times with `String` deltas
       whose concatenation equals `Answer#answer`.
@@ -341,7 +464,7 @@ spec/
       yielded to the block. (Documents the streaming
       one-shot constraint.)
 
-### Phase 6 — Strict-grounding refusal
+### Phase 7 — Strict-grounding refusal
 - [ ] KB with `strict_grounding: true` + query that matches
       no chunks above threshold:
       - `Answer#answer == REFUSAL_MESSAGE`
@@ -364,14 +487,16 @@ spec/
       collected << delta }` against the strict-empty case →
       block called exactly once with `delta == REFUSAL_MESSAGE`.
 
-### Phase 7 — End-to-end smoke
+### Phase 8 — End-to-end smoke
 - [ ] `bundle exec rspec` exits 0.
 - [ ] `bundle exec rubocop` exits 0.
 - [ ] M3 retrieval + ingestion smoke specs stay green —
-      no behavior change.
+      no behavior change beyond the new hit rows.
 - [ ] M4 ask smoke spec exercises ingest → embed → ask
       (streamed + non-streamed) → strict-refusal →
-      include_citations parity, on a single test KB.
+      include_citations parity, on a single test KB, plus a
+      reconstruction round-trip via
+      `Curator::Answer.from_retrieval`.
 
 ## Implementation Notes
 
@@ -382,7 +507,7 @@ relies on RubyLLM's `acts_as_chat` callbacks to persist the
 user + assistant `Message` rows; we don't manually `Message.create!`.
 For the strict-grounding refusal path (no LLM call) the messages
 go through `chat.add_message(role:, content:)` which `acts_as_chat`
-also persists — verified during Phase 6 against the dummy app.
+also persists — verified during Phase 7 against the dummy app.
 
 **Pipeline factoring is a pure refactor**: Phase 2 is the only
 phase that risks breaking M3, so its validation gate is the M3
@@ -412,6 +537,31 @@ ask"), forcing chat UIs to filter on conjunction. The KB
 association is on `curator_retrievals.knowledge_base_id`;
 `Chat.where(curator_scope: nil)` finds all ad-hoc asks across
 all KBs.
+
+**Hit snapshot vs. live FK (Phase 5)**: `curator_retrieval_hits`
+denormalizes `text` / `document_name` / `page_number` /
+`source_url` instead of joining through `chunk_id` at read time.
+The reason is that chunks are mutable in M2/M3 — `Curator.reingest`
+destroys + recreates them with current chunking settings, and
+`document.destroy` removes them outright. Without the snapshot a
+past Q&A loses its source text the moment its underlying document
+changes, which defeats the audit-trail purpose of the table. The
+live FK (`chunk_id`) is preserved with `on_delete: :nullify` so
+admin UIs can still link to the current chunk *when it exists*
+and render a "source no longer available" affordance otherwise.
+Cost: ~1KB per hit row; for the v1 chunk_limit default of 5,
+that's ~5KB per ask. Acceptable for the audit-trail value.
+
+**Pipeline owns hit persistence, not Asker / Retriever (Phase 5)**:
+the bulk insert lives in `Curator::Retrievers::Pipeline#call`, not
+in either caller's wrapper. Two reasons: (1) `Curator.retrieve`
+should also build the same audit trail, and pushing the write
+into Pipeline gives both callers one shared write site;
+(2) failure modes stay coherent — if the insert raises, the
+existing `mark_failed!` at the Retriever / Asker level catches
+it and flips the row to `:failed` without either caller needing
+to know hit persistence happened. Phase 5 is the second pure-add
+to Pipeline (after Phase 2's extraction); both callers stay thin.
 
 **Snapshot column proliferation**: `curator_retrievals` now
 carries chat_model, embedding_model, retrieval_strategy,

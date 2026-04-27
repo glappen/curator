@@ -24,6 +24,7 @@ require "curator/retrievers/pipeline"
 require "curator/retriever"
 require "curator/prompt/templates"
 require "curator/prompt/assembler"
+require "curator/asker"
 require "curator/reembed"
 
 # Note: `curator/engine` and the `ruby_llm` / `neighbor` requires live in
@@ -141,6 +142,30 @@ module Curator
         limit:          limit,
         threshold:      threshold,
         strategy:       strategy
+      ).call
+    end
+
+    # Run a retrieval-grounded LLM ask against a knowledge base.
+    # Mirrors `Curator.retrieve`'s signature, plus per-call
+    # `system_prompt:` (replaces only the instructions half — the
+    # context block stays Curator-controlled) and `chat_model:`
+    # overrides. Returns `Curator::Answer` wrapping the assistant
+    # text, the underlying `RetrievalResults`, and bookkeeping FKs.
+    #
+    # Persists one `chats` row (`curator_scope: nil`) plus user +
+    # assistant `messages` rows per ask, and (when
+    # `Curator.config.log_queries`) one `curator_retrievals` row
+    # snapshotting every column that affects the answer at query time.
+    def ask(query, knowledge_base: nil, limit: nil, threshold: nil, strategy: nil,
+            system_prompt: nil, chat_model: nil)
+      Asker.new(
+        query,
+        knowledge_base: knowledge_base,
+        limit:          limit,
+        threshold:      threshold,
+        strategy:       strategy,
+        system_prompt:  system_prompt,
+        chat_model:     chat_model
       ).call
     end
 

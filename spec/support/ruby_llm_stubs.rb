@@ -1,5 +1,6 @@
 module RubyLLMStubs
-  EMBEDDING_URL = "https://api.openai.com/v1/embeddings".freeze
+  EMBEDDING_URL       = "https://api.openai.com/v1/embeddings".freeze
+  CHAT_COMPLETION_URL = "https://api.openai.com/v1/chat/completions".freeze
 
   # Stub OpenAI's /embeddings endpoint to return either a fixed vector
   # array (when `vectors:` is given) or a deterministic per-input vector
@@ -44,6 +45,55 @@ module RubyLLMStubs
     end
 
     WebMock.stub_request(:post, EMBEDDING_URL)
+           .with(body: hash_including("model" => model))
+           .to_return(
+             status:  status,
+             headers: { "Content-Type" => "application/json" },
+             body:    { "error" => { "type" => error_type, "message" => "stubbed #{kind}" } }.to_json
+           )
+  end
+
+  # Stub OpenAI's /chat/completions endpoint to return a non-streamed
+  # assistant message with the given content. Mirrors `stub_embed`'s
+  # shape: returns the WebMock stub so callers can assert on it.
+  def stub_chat_completion(model: "gpt-5-mini", content: "stubbed assistant reply",
+                           input_tokens: 12, output_tokens: 8, finish_reason: "stop")
+    WebMock.stub_request(:post, CHAT_COMPLETION_URL)
+           .with(body: hash_including("model" => model))
+           .to_return(
+             status:  200,
+             headers: { "Content-Type" => "application/json" },
+             body:    {
+               "id"      => "chatcmpl-stub-#{SecureRandom.hex(4)}",
+               "object"  => "chat.completion",
+               "created" => Time.now.to_i,
+               "model"   => model,
+               "choices" => [ {
+                 "index"         => 0,
+                 "message"       => { "role" => "assistant", "content" => content },
+                 "finish_reason" => finish_reason
+               } ],
+               "usage"   => {
+                 "prompt_tokens"     => input_tokens,
+                 "completion_tokens" => output_tokens,
+                 "total_tokens"      => input_tokens + output_tokens
+               }
+             }.to_json
+           )
+  end
+
+  # Stub /chat/completions to fail. `:server_error` is the
+  # whole-call retryable case; `:bad_request` is the permanent case
+  # (RubyLLM raises BadRequestError).
+  def stub_chat_completion_error(kind, model: "gpt-5-mini")
+    status, error_type = case kind
+    when :bad_request   then [ 400, "invalid_request_error" ]
+    when :rate_limit    then [ 429, "rate_limit_exceeded" ]
+    when :server_error  then [ 503, "service_unavailable" ]
+    else raise ArgumentError, "unknown stub kind: #{kind.inspect}"
+    end
+
+    WebMock.stub_request(:post, CHAT_COMPLETION_URL)
            .with(body: hash_including("model" => model))
            .to_return(
              status:  status,

@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Curator::Retrieval::Hybrid do
+RSpec.describe Curator::Retrievers::Hybrid do
   subject(:strategy) { described_class.new }
 
   let(:kb)       { create(:curator_knowledge_base, tsvector_config: "english") }

@@ -1,5 +1,5 @@
 module Curator
-  module Retrieval
+  module Retrievers
     # Hybrid retrieval = vector ∪ keyword fused via Reciprocal Rank
     # Fusion (Neighbor::Reranking.rrf). The vector half is filtered by
     # `threshold` *before* fusion (Q3): bumping threshold high enough
@@ -24,7 +24,7 @@ module Curator
         self.class.fuse(vector_hits, keyword_hits, limit: limit)
       end
 
-      # Pure fusion of two ranked Hit lists. Public for the Searcher
+      # Pure fusion of two ranked Hit lists. Public for the Retriever
       # which calls Vector + Keyword directly so it can record their
       # candidate counts in the rrf_fusion trace payload without
       # double-running the queries.

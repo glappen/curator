@@ -32,14 +32,14 @@ RSpec.describe "Curator install migration templates" do
       table:      "curator_embeddings",
       must_have:  [ "vector(1536)", "USING hnsw", "index: { unique: true" ]
     },
-    "create_curator_searches.rb.tt"        => {
-      class_name: "CreateCuratorSearches",
-      table:      "curator_searches",
+    "create_curator_retrievals.rb.tt"      => {
+      class_name: "CreateCuratorRetrievals",
+      table:      "curator_retrievals",
       must_have:  [ "system_prompt_text", "retrieval_strategy", "chunk_limit" ]
     },
-    "create_curator_search_steps.rb.tt"    => {
-      class_name: "CreateCuratorSearchSteps",
-      table:      "curator_search_steps",
+    "create_curator_retrieval_steps.rb.tt" => {
+      class_name: "CreateCuratorRetrievalSteps",
+      table:      "curator_retrieval_steps",
       must_have:  [ "step_type", "payload" ]
     },
     "create_curator_evaluations.rb.tt"     => {

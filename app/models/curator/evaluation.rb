@@ -24,7 +24,7 @@ module Curator
       "other"               => "Something else is wrong — please describe in the feedback field."
     }.freeze
 
-    belongs_to :search, class_name: "Curator::Search"
+    belongs_to :retrieval, class_name: "Curator::Retrieval"
 
     enum :rating, RATINGS.index_with(&:to_s)
 

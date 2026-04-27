@@ -1,5 +1,5 @@
 module Curator
-  module Retrieval
+  module Retrievers
     # Pure-keyword retrieval over the GIN-indexed `content_tsvector`
     # column. Joins through `documents` (not `embeddings`) so chunks in
     # `:pending` or `:failed` status are still queryable — keyword

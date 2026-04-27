@@ -1,11 +1,11 @@
 module Curator
-  # Service object for `Curator.search`. Resolves the KB, validates
+  # Service object for `Curator.retrieve`. Resolves the KB, validates
   # input, embeds the query, runs the configured retrieval strategy,
-  # and returns a `Curator::SearchResults`. Every call (regardless of
-  # strategy) snapshots config onto a `curator_searches` row so
+  # and returns a `Curator::RetrievalResults`. Every call (regardless of
+  # strategy) snapshots config onto a `curator_retrievals` row so
   # operators can replay / audit later — unless `config.log_queries`
-  # is false, in which case no row is written and `search_id` is nil.
-  class Searcher
+  # is false, in which case no row is written and `retrieval_id` is nil.
+  class Retriever
     STRATEGIES = %i[vector keyword hybrid].freeze
 
     def initialize(query, knowledge_base: nil, limit: nil, threshold: nil, strategy: nil)
@@ -27,9 +27,9 @@ module Curator
 
       validate_threshold!(strategy, threshold)
 
-      search_row = open_search_row!(kb, strategy: strategy, limit: limit, threshold: threshold)
+      retrieval_row = open_retrieval_row!(kb, strategy: strategy, limit: limit, threshold: threshold)
 
-      run(kb, strategy, limit, threshold, search_row)
+      run(kb, strategy, limit, threshold, retrieval_row)
     end
 
     private
@@ -69,10 +69,10 @@ module Curator
       override.nil? ? kb.similarity_threshold.to_f : override.to_f
     end
 
-    def open_search_row!(kb, strategy:, limit:, threshold:)
+    def open_retrieval_row!(kb, strategy:, limit:, threshold:)
       return nil unless Curator.config.log_queries
 
-      Curator::Search.create!(
+      Curator::Retrieval.create!(
         knowledge_base:       kb,
         query:                @raw_query,
         chat_model:           kb.chat_model,
@@ -83,40 +83,40 @@ module Curator
       )
     end
 
-    def run(kb, strategy, limit, threshold, search_row)
+    def run(kb, strategy, limit, threshold, retrieval_row)
       started_at = Time.current
-      hits       = execute_strategy(kb, strategy, limit, threshold, search_row)
+      hits       = execute_strategy(kb, strategy, limit, threshold, retrieval_row)
       duration   = ((Time.current - started_at) * 1000).to_i
 
-      search_row&.update!(status: :success, total_duration_ms: duration)
+      retrieval_row&.update!(status: :success, total_duration_ms: duration)
 
-      Curator::SearchResults.new(
+      Curator::RetrievalResults.new(
         query:          @raw_query,
         hits:           hits,
         duration_ms:    duration,
         knowledge_base: kb,
-        search_id:      search_row&.id
+        retrieval_id:   retrieval_row&.id
       )
     rescue StandardError => e
       # Per CLAUDE.md "fail loud" rule, every failure flips the
-      # already-opened search row to :failed — not just embedding
+      # already-opened retrieval row to :failed — not just embedding
       # errors. Programming bugs, DB failures, Neighbor::Errors all
-      # need the row marked so operators can see them in the searches
+      # need the row marked so operators can see them in the retrievals
       # admin view.
-      mark_failed!(search_row, started_at, e)
+      mark_failed!(retrieval_row, started_at, e)
       raise
     end
 
-    def execute_strategy(kb, strategy, limit, threshold, search_row)
+    def execute_strategy(kb, strategy, limit, threshold, retrieval_row)
       # Embed once at the top for any strategy that needs a query
       # vector. Vector and Hybrid both consume the same `query_vec`;
       # Keyword ignores it. This guarantees hybrid never re-embeds.
-      query_vec = needs_query_vec?(strategy) ? embed_query(kb, search_row) : nil
+      query_vec = needs_query_vec?(strategy) ? embed_query(kb, retrieval_row) : nil
 
       case strategy
-      when :vector  then run_vector(kb, query_vec, limit, threshold, search_row)
-      when :keyword then run_keyword(kb, limit, search_row)
-      when :hybrid  then run_hybrid(kb, query_vec, limit, threshold, search_row)
+      when :vector  then run_vector(kb, query_vec, limit, threshold, retrieval_row)
+      when :keyword then run_keyword(kb, limit, retrieval_row)
+      when :hybrid  then run_hybrid(kb, query_vec, limit, threshold, retrieval_row)
       end
     end
 
@@ -124,9 +124,9 @@ module Curator
       strategy == :vector || strategy == :hybrid
     end
 
-    def embed_query(kb, search_row)
+    def embed_query(kb, retrieval_row)
       Curator::Tracing.record(
-        search:          search_row,
+        retrieval:       retrieval_row,
         step_type:       :embed_query,
         payload_builder: ->(emb) { { model: emb.model, input_tokens: emb.input_tokens } }
       ) do
@@ -136,23 +136,23 @@ module Curator
       raise Curator::EmbeddingError, "query embedding failed (#{e.class}): #{e.message}"
     end
 
-    def run_vector(kb, query_vec, limit, threshold, search_row)
+    def run_vector(kb, query_vec, limit, threshold, retrieval_row)
       Curator::Tracing.record(
-        search:          search_row,
+        retrieval:       retrieval_row,
         step_type:       :vector_search,
         payload_builder: ->(hits) { { candidate_count: hits.size, top_chunk_ids: hits.first(5).map(&:chunk_id) } }
       ) do
-        Curator::Retrieval::Vector.new.call(kb, query_vec, limit: limit, threshold: threshold)
+        Curator::Retrievers::Vector.new.call(kb, query_vec, limit: limit, threshold: threshold)
       end
     end
 
-    def run_keyword(kb, limit, search_row)
+    def run_keyword(kb, limit, retrieval_row)
       Curator::Tracing.record(
-        search:          search_row,
+        retrieval:       retrieval_row,
         step_type:       :keyword_search,
         payload_builder: ->(hits) { { candidate_count: hits.size, top_chunk_ids: hits.first(5).map(&:chunk_id) } }
       ) do
-        Curator::Retrieval::Keyword.new.call(kb, @raw_query, limit: limit)
+        Curator::Retrievers::Keyword.new.call(kb, @raw_query, limit: limit)
       end
     end
 
@@ -161,10 +161,10 @@ module Curator
     # (per Phase 5 spec). We call Vector + Keyword directly here
     # rather than through Hybrid#call so we can pull the candidate
     # counts into the trace payload without double-running anything.
-    def run_hybrid(kb, query_vec, limit, threshold, search_row)
+    def run_hybrid(kb, query_vec, limit, threshold, retrieval_row)
       meta = { vector_count: 0, keyword_count: 0 }
       Curator::Tracing.record(
-        search:    search_row,
+        retrieval: retrieval_row,
         step_type: :rrf_fusion,
         payload_builder: ->(hits) {
           {
@@ -175,17 +175,17 @@ module Curator
           }
         }
       ) do
-        vector_hits  = Curator::Retrieval::Vector.new.call(kb, query_vec, limit: limit, threshold: threshold)
-        keyword_hits = Curator::Retrieval::Keyword.new.call(kb, @raw_query, limit: limit)
+        vector_hits  = Curator::Retrievers::Vector.new.call(kb, query_vec, limit: limit, threshold: threshold)
+        keyword_hits = Curator::Retrievers::Keyword.new.call(kb, @raw_query, limit: limit)
         meta[:vector_count]  = vector_hits.size
         meta[:keyword_count] = keyword_hits.size
-        Curator::Retrieval::Hybrid.fuse(vector_hits, keyword_hits, limit: limit)
+        Curator::Retrievers::Hybrid.fuse(vector_hits, keyword_hits, limit: limit)
       end
     end
 
-    def mark_failed!(search_row, started_at, error)
-      return if search_row.nil?
-      search_row.update!(
+    def mark_failed!(retrieval_row, started_at, error)
+      return if retrieval_row.nil?
+      retrieval_row.update!(
         status:            :failed,
         error_message:     "#{error.class}: #{error.message}",
         total_duration_ms: ((Time.current - started_at) * 1000).to_i

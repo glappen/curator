@@ -13,13 +13,13 @@ require "curator/file_normalizer"
 require "curator/ingest_result"
 require "curator/url_fetcher"
 require "curator/hit"
-require "curator/search_results"
+require "curator/retrieval_results"
 require "curator/tracing"
-require "curator/retrieval/embedding_scoped"
-require "curator/retrieval/vector"
-require "curator/retrieval/keyword"
-require "curator/retrieval/hybrid"
-require "curator/searcher"
+require "curator/retrievers/embedding_scoped"
+require "curator/retrievers/vector"
+require "curator/retrievers/keyword"
+require "curator/retrievers/hybrid"
+require "curator/retriever"
 require "curator/reembed"
 
 # Note: `curator/engine` and the `ruby_llm` / `neighbor` requires live in
@@ -118,7 +118,7 @@ module Curator
       files_to_ingest(base, glob_patterns).map { |fp| ingest_one_for_directory(fp, kb) }
     end
 
-    # Search a knowledge base for chunks relevant to `query`.
+    # Retrieve chunks relevant to `query` from a knowledge base.
     #
     # @param query [String] non-empty user query.
     # @param knowledge_base [Curator::KnowledgeBase, String, Symbol, nil]
@@ -129,9 +129,9 @@ module Curator
     #   — passing both raises ArgumentError.
     # @param strategy [:vector, :keyword, :hybrid, nil] Override the
     #   KB's `retrieval_strategy`. nil → use the KB default.
-    # @return [Curator::SearchResults]
-    def search(query, knowledge_base: nil, limit: nil, threshold: nil, strategy: nil)
-      Searcher.new(
+    # @return [Curator::RetrievalResults]
+    def retrieve(query, knowledge_base: nil, limit: nil, threshold: nil, strategy: nil)
+      Retriever.new(
         query,
         knowledge_base: knowledge_base,
         limit:          limit,

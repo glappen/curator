@@ -1,6 +1,6 @@
 require "rails_helper"
 
-RSpec.describe Curator::Retrieval::Vector do
+RSpec.describe Curator::Retrievers::Vector do
   subject(:strategy) { described_class.new }
 
   let(:kb)       { create(:curator_knowledge_base) }

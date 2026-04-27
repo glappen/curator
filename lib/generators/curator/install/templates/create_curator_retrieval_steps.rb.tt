@@ -1,0 +1,20 @@
+class CreateCuratorRetrievalSteps < ActiveRecord::Migration[7.0]
+  def change
+    create_table :curator_retrieval_steps do |t|
+      t.references :retrieval,
+                   null: false,
+                   foreign_key: { to_table: :curator_retrievals, on_delete: :cascade },
+                   index: { name: "index_curator_retrieval_steps_on_retrieval_id" }
+
+      t.integer  :sequence,    null: false
+      t.string   :step_type,   null: false
+      t.datetime :started_at,  null: false
+      t.integer  :duration_ms, null: false
+      t.string   :status,      null: false
+      t.jsonb    :payload,     null: false, default: {}
+      t.text     :error_message
+    end
+
+    add_index :curator_retrieval_steps, [ :retrieval_id, :sequence ], unique: true
+  end
+end

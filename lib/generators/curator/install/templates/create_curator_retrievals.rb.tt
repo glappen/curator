@@ -1,10 +1,10 @@
-class CreateCuratorSearches < ActiveRecord::Migration[7.0]
+class CreateCuratorRetrievals < ActiveRecord::Migration[7.0]
   def change
-    create_table :curator_searches do |t|
+    create_table :curator_retrievals do |t|
       t.references :knowledge_base,
                    null: false,
                    foreign_key: { to_table: :curator_knowledge_bases, on_delete: :cascade },
-                   index: { name: "index_curator_searches_on_knowledge_base_id" }
+                   index: { name: "index_curator_retrievals_on_knowledge_base_id" }
 
       t.bigint :chat_id
       t.bigint :message_id
@@ -28,8 +28,8 @@ class CreateCuratorSearches < ActiveRecord::Migration[7.0]
       t.datetime :created_at, null: false
     end
 
-    add_index :curator_searches, :chat_id
-    add_index :curator_searches, :message_id
-    add_index :curator_searches, :created_at
+    add_index :curator_retrievals, :chat_id
+    add_index :curator_retrievals, :message_id
+    add_index :curator_retrievals, :created_at
   end
 end

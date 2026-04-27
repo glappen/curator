@@ -1,6 +1,6 @@
 FactoryBot.define do
-  factory :curator_search_step, class: "Curator::SearchStep" do
-    search { association(:curator_search) }
+  factory :curator_retrieval_step, class: "Curator::RetrievalStep" do
+    retrieval { association(:curator_retrieval) }
     sequence(:sequence) { |n| n }
     step_type   { "vector_search" }
     started_at  { Time.current }

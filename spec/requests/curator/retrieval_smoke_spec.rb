@@ -5,8 +5,8 @@ require "rails_helper"
 #
 #   Curator.ingest → IngestDocumentJob → EmbedChunksJob (real body,
 #   RubyLLM stubbed at HTTP via the suite-level stub_embed) →
-#   Curator.search across :vector / :keyword / :hybrid →
-#   Curator.reembed scope=:all → re-search.
+#   Curator.retrieve across :vector / :keyword / :hybrid →
+#   Curator.reembed scope=:all → re-retrieve.
 #
 # The point is not retrieval quality (the deterministic stub doesn't
 # model real semantics) — it's that every layer's outputs are wired to
@@ -65,7 +65,7 @@ RSpec.describe "Curator retrieval end-to-end smoke", type: :request do
 
     describe "vector retrieval" do
       it "returns ranked hits and snapshots strategy=vector" do
-        results = Curator.search("Sample Markdown",
+        results = Curator.retrieve("Sample Markdown",
                                  knowledge_base: default_kb,
                                  strategy:       :vector,
                                  threshold:      0.0)
@@ -74,7 +74,7 @@ RSpec.describe "Curator retrieval end-to-end smoke", type: :request do
         expect_ranks_monotonic(results)
         expect(results.hits.map(&:score)).to all(be_a(Float))
 
-        row = Curator::Search.find(results.search_id)
+        row = Curator::Retrieval.find(results.retrieval_id)
         expect(row.retrieval_strategy).to eq("vector")
         expect(row).to be_success
       end
@@ -83,7 +83,7 @@ RSpec.describe "Curator retrieval end-to-end smoke", type: :request do
     describe "keyword retrieval" do
       it "returns ranked hits without invoking the embed API and snapshots strategy=keyword" do
         WebMock.reset_executed_requests!
-        results = Curator.search("markdown",
+        results = Curator.retrieve("markdown",
                                  knowledge_base: default_kb,
                                  strategy:       :keyword)
 
@@ -92,7 +92,7 @@ RSpec.describe "Curator retrieval end-to-end smoke", type: :request do
         expect(results.hits.map(&:score)).to all(be_nil)
         expect(WebMock).not_to have_requested(:post, RubyLLMStubs::EMBEDDING_URL)
 
-        row = Curator::Search.find(results.search_id)
+        row = Curator::Retrieval.find(results.retrieval_id)
         expect(row.retrieval_strategy).to   eq("keyword")
         expect(row.similarity_threshold).to be_nil
         expect(row).to                      be_success
@@ -101,14 +101,14 @@ RSpec.describe "Curator retrieval end-to-end smoke", type: :request do
 
     describe "hybrid retrieval (KB default)" do
       it "fuses vector + keyword hits and snapshots strategy=hybrid" do
-        results = Curator.search("Sample Markdown",
+        results = Curator.retrieve("Sample Markdown",
                                  knowledge_base: default_kb,
                                  threshold:      -1.0)
 
         expect(results).not_to be_empty
         expect_ranks_monotonic(results)
 
-        row = Curator::Search.find(results.search_id)
+        row = Curator::Retrieval.find(results.retrieval_id)
         expect(row.retrieval_strategy).to eq("hybrid")
         expect(row).to                    be_success
       end
@@ -116,7 +116,7 @@ RSpec.describe "Curator retrieval end-to-end smoke", type: :request do
   end
 
   describe "reembed scope=:all round trip" do
-    it "drives every chunk through :pending → :embedded and leaves search working" do
+    it "drives every chunk through :pending → :embedded and leaves retrieval working" do
       ingest_corpus!
 
       original_embedding_ids = Curator::Embedding.where(chunk_id: all_chunks.select(:id)).pluck(:id)
@@ -140,7 +140,7 @@ RSpec.describe "Curator retrieval end-to-end smoke", type: :request do
       expect(all_chunks.pluck(:status)).to                  all(eq("embedded"))
       expect(all_documents.pluck(:status)).to               all(eq("complete"))
 
-      results = Curator.search("Sample Markdown",
+      results = Curator.retrieve("Sample Markdown",
                                knowledge_base: default_kb,
                                threshold:      -1.0)
       expect(results).not_to be_empty

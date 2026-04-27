@@ -1,6 +1,6 @@
 module Curator
-  class Search < ApplicationRecord
-    self.table_name = "curator_searches"
+  class Retrieval < ApplicationRecord
+    self.table_name = "curator_retrievals"
 
     STATUSES = %i[success failed].freeze
 
@@ -8,8 +8,8 @@ module Curator
     belongs_to :chat,    class_name: "Chat",    optional: true
     belongs_to :message, class_name: "Message", optional: true
 
-    has_many :search_steps, class_name: "Curator::SearchStep", dependent: :destroy
-    has_many :evaluations,  class_name: "Curator::Evaluation", dependent: :destroy
+    has_many :retrieval_steps, class_name: "Curator::RetrievalStep", dependent: :destroy
+    has_many :evaluations,     class_name: "Curator::Evaluation",    dependent: :destroy
 
     enum :status, STATUSES.index_with(&:to_s)
 

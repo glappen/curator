@@ -17,8 +17,8 @@ module Curator
       spanish swedish tamil turkish yiddish
     ].freeze
 
-    has_many :documents, class_name: "Curator::Document", dependent: :destroy
-    has_many :searches,  class_name: "Curator::Search",   dependent: :destroy
+    has_many :documents,   class_name: "Curator::Document",  dependent: :destroy
+    has_many :retrievals,  class_name: "Curator::Retrieval", dependent: :destroy
 
     validates :name, presence: true
     validates :slug,

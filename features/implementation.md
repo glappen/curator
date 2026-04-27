@@ -929,6 +929,32 @@ is demo-able end-to-end via CLI).
 - **Swap heuristic token counter for tiktoken** — v1 uses a char-based heuristic
   (no native deps). Behind a single `Curator::TokenCounter.count(text)` module
   so swap is a one-file change + token_count backfill.
+- **BM25 keyword scoring (via ParadeDB `pg_search` or SQL-side computation)** —
+  v1 uses Postgres `tsvector` + `ts_rank`, which is known to underperform BM25
+  on RAG retrieval-quality benchmarks. Deferred because the swap is localized
+  to `Curator::Retrievers::Keyword` (RRF fusion layer unchanged) and should be
+  driven by eval data, not speculation. Trigger for v2 work: M7 evaluation
+  exports show keyword recall as a recurring failure category, or operators
+  request it. Implementation path: ParadeDB extension for native BM25, or a
+  manual SQL-side BM25 computation against the existing `tsvector` index for
+  zero-extension deployments.
+- **SQLite support alongside Postgres** — v1 is Postgres-only (pgvector for
+  vectors, tsvector for keyword, `text[]` for `failure_categories`). SQLite
+  support requires an adapter layer over vector ops (sqlite-vec), keyword
+  search (FTS5 with native BM25), array columns (JSON-encoded fallback), and
+  parallel migration templates. Most Rails production apps run Postgres, so
+  v1 keeps a single integration surface. Trigger for v2: developer-experience
+  feedback that the Postgres requirement blocks adoption for small / hobbyist
+  Rails apps.
+- **External / embedded vector stores (LanceDB, Pinecone, Weaviate, etc.)** —
+  separately listed under "From the original spec's deferred list," but the
+  M4-planning concern is worth recording: a separate vector store breaks the
+  single-transaction guarantee that lets Curator cascade-delete cleanly,
+  back up atomically, and avoid dual-write inconsistency between chunk rows
+  and vector rows. The pgvector-in-the-same-DB design is load-bearing for
+  the engine's "drop-in" positioning. v2 work, if pursued, must include an
+  ingestion-side reconciliation story (orphan-vector sweep, retry-with-idempotency
+  on partial-write failures) before the architectural cost is justifiable.
 
 ---
 

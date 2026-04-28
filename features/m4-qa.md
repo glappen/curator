@@ -264,7 +264,7 @@ Milestones" → M4, plus the "Service Object API", "Citation System",
      column once operators ask; the column doesn't earn its
      keep yet (zero feedback signal pre-v1).
 
-- [ ] **Phase 8 — End-to-end Q&A smoke + parity sweep.**
+- [x] **Phase 8 — End-to-end Q&A smoke + parity sweep.**
    - `spec/requests/curator/ask_smoke_spec.rb`: full chain
      `Curator.ingest` → IngestDocumentJob → EmbedChunksJob (suite
      `stub_embed`, plus a new `stub_chat_completion` for
@@ -279,7 +279,10 @@ Milestones" → M4, plus the "Service Object API", "Citation System",
      `chat_id` / `message_id` / `system_prompt_*` populated)
      per ask, plus N `curator_retrieval_hits` rows whose
      reconstruction via `Curator::Answer.from_retrieval` matches
-     the live Answer.
+     the live Answer. Three KBs by construction: a populated
+     default for happy/streaming, an empty KB for the refusal
+     case (zero docs forces empty hits), and a populated copy
+     with `include_citations: false` for the parity case.
    - **M3 retrieval smoke spec stays green** — Phase 2's
      extraction is a pure refactor, M3 specs assert no behavior
      change beyond Pipeline being where the work happens.
@@ -492,11 +495,11 @@ spec/
       block called exactly once with `delta == REFUSAL_MESSAGE`.
 
 ### Phase 8 — End-to-end smoke
-- [ ] `bundle exec rspec` exits 0.
-- [ ] `bundle exec rubocop` exits 0.
-- [ ] M3 retrieval + ingestion smoke specs stay green —
+- [x] `bundle exec rspec` exits 0.
+- [x] `bundle exec rubocop` exits 0.
+- [x] M3 retrieval + ingestion smoke specs stay green —
       no behavior change beyond the new hit rows.
-- [ ] M4 ask smoke spec exercises ingest → embed → ask
+- [x] M4 ask smoke spec exercises ingest → embed → ask
       (streamed + non-streamed) → strict-refusal →
       include_citations parity, on a single test KB, plus a
       reconstruction round-trip via

@@ -156,8 +156,17 @@ module Curator
     # assistant `messages` rows per ask, and (when
     # `Curator.config.log_queries`) one `curator_retrievals` row
     # snapshotting every column that affects the answer at query time.
+    #
+    # When given a block, streams the assistant response: the block
+    # is called with each `String` delta as it arrives, and
+    # `Answer#answer` still holds the fully concatenated text on
+    # return. `Curator.config.llm_retry_count` controls how many
+    # times faraday-retry will retry a failed request; for a
+    # mid-stream error this means partial deltas may be replayed
+    # across attempts. Streaming consumers that need at-most-once
+    # delivery should set `llm_retry_count = 0`.
     def ask(query, knowledge_base: nil, limit: nil, threshold: nil, strategy: nil,
-            system_prompt: nil, chat_model: nil)
+            system_prompt: nil, chat_model: nil, &block)
       Asker.new(
         query,
         knowledge_base: knowledge_base,
@@ -166,7 +175,7 @@ module Curator
         strategy:       strategy,
         system_prompt:  system_prompt,
         chat_model:     chat_model
-      ).call
+      ).call(&block)
     end
 
     # Re-embed chunks in a knowledge base.

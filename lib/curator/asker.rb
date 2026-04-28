@@ -62,20 +62,26 @@ module Curator
       hits       = pipeline.call(retrieval_row)
 
       assembled = assemble_prompt(kb, hits, retrieval_row)
+      chat      = create_chat!(chat_model, retrieval_row)
 
-      chat            = create_chat!(chat_model, retrieval_row)
-      assistant_msg   = invoke_llm!(chat, assembled[:system_prompt_text], retrieval_row, &stream_block)
-      ar_message      = chat.messages.order(:id).last
+      answer_text, ar_message_id =
+        if refuse?(hits, kb)
+          record = perform_refusal!(chat, &stream_block)
+          [ record.content, record.id ]
+        else
+          llm_msg = invoke_llm!(chat, assembled[:system_prompt_text], retrieval_row, &stream_block)
+          [ llm_msg.content, chat.messages.order(:id).last.id ]
+        end
 
       duration = ((Time.current - started_at) * 1000).to_i
       retrieval_row&.update!(
-        message_id:        ar_message.id,
+        message_id:        ar_message_id,
         status:            :success,
         total_duration_ms: duration
       )
 
       Curator::Answer.new(
-        answer:            assistant_msg.content,
+        answer:            answer_text,
         retrieval_results: build_retrieval_results(hits, kb, retrieval_row, duration),
         retrieval_id:      retrieval_row&.id,
         strict_grounding:  kb.strict_grounding
@@ -83,6 +89,29 @@ module Curator
     rescue StandardError => e
       mark_failed!(retrieval_row, started_at, e)
       raise
+    end
+
+    def refuse?(hits, kb)
+      hits.empty? && kb.strict_grounding
+    end
+
+    # Strict-grounding refusal path: skip the LLM entirely. Persist the
+    # user query + canned assistant refusal directly via `add_message`
+    # (acts_as_chat writes both Message rows). When a streaming block
+    # was given, yield the full refusal as a single `String` chunk so
+    # consumers see the same once-per-ask shape as a normal stream.
+    # Absence of an `:llm_call` trace step is the admin-UI signal that
+    # the LLM was never asked.
+    def perform_refusal!(chat, &stream_block)
+      assistant = ActiveRecord::Base.transaction do
+        chat.add_message(role: :user, content: @raw_query)
+        chat.add_message(
+          role:    :assistant,
+          content: Curator::Prompt::Templates::REFUSAL_MESSAGE
+        )
+      end
+      stream_block&.call(Curator::Prompt::Templates::REFUSAL_MESSAGE)
+      assistant
     end
 
     def assemble_prompt(kb, hits, retrieval_row)

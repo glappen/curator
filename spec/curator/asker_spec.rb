@@ -381,6 +381,80 @@ RSpec.describe "Curator.ask" do
     end
   end
 
+  describe "strict-grounding refusal path" do
+    # No chunks are created in this describe — the retrieval pipeline
+    # comes back empty and the refusal branch fires.
+    it "skips the LLM and returns REFUSAL_MESSAGE when KB has strict_grounding: true" do
+      answer = Curator.ask("alpha beta gamma", knowledge_base: kb)
+
+      expect(answer.answer).to    eq(Curator::Prompt::Templates::REFUSAL_MESSAGE)
+      expect(answer.refused?).to  be true
+      expect(answer.sources).to   be_empty
+      expect(WebMock).not_to have_requested(:post, RubyLLMStubs::CHAT_COMPLETION_URL)
+    end
+
+    it "persists user + assistant Message rows on the chat (no system message — with_instructions never ran)" do
+      Curator.ask("alpha beta gamma", knowledge_base: kb)
+
+      chat  = Chat.sole
+      roles = chat.messages.order(:id).pluck(:role)
+      expect(roles).to eq(%w[user assistant])
+
+      assistant_msg = chat.messages.find_by(role: :assistant)
+      expect(assistant_msg.content).to eq(Curator::Prompt::Templates::REFUSAL_MESSAGE)
+      expect(chat.messages.find_by(role: :user).content).to eq("alpha beta gamma")
+      expect(Curator::Retrieval.sole.message_id).to eq(assistant_msg.id)
+    end
+
+    it "emits prompt_assembly but no llm_call, marks the retrieval row :success" do
+      Curator.ask("alpha beta gamma", knowledge_base: kb)
+
+      row    = Curator::Retrieval.sole
+      types  = row.retrieval_steps.order(:sequence).pluck(:step_type)
+      expect(types).to     include("prompt_assembly")
+      expect(types).not_to include("llm_call")
+      expect(row).to be_success
+      expect(row.chat_id).not_to    be_nil
+      expect(row.message_id).not_to be_nil
+    end
+
+    it "calls a streaming block exactly once with REFUSAL_MESSAGE as a single delta" do
+      collected = []
+      answer = Curator.ask("alpha beta gamma", knowledge_base: kb) { |delta| collected << delta }
+
+      expect(collected).to eq([ Curator::Prompt::Templates::REFUSAL_MESSAGE ])
+      expect(answer.answer).to   eq(Curator::Prompt::Templates::REFUSAL_MESSAGE)
+      expect(answer.refused?).to be true
+    end
+
+    context "when KB has strict_grounding: false" do
+      let(:kb) do
+        create(:curator_knowledge_base,
+               retrieval_strategy:   "vector",
+               similarity_threshold: 0.0,
+               chunk_limit:          5,
+               strict_grounding:     false,
+               include_citations:    true)
+      end
+
+      it "calls the LLM normally with an empty context block and refused? is false" do
+        answer = Curator.ask("alpha beta gamma", knowledge_base: kb)
+
+        expect(WebMock).to have_requested(:post, RubyLLMStubs::CHAT_COMPLETION_URL).once
+        expect(answer.answer).to    eq("Stubbed answer with marker [1].")
+        expect(answer.refused?).to  be false
+        expect(answer.sources).to   be_empty
+
+        row = Curator::Retrieval.sole
+        types = row.retrieval_steps.order(:sequence).pluck(:step_type)
+        expect(types).to include("llm_call")
+        # Assembler still ran with zero hits — instructions present, no
+        # `[N] From` block since hits were empty.
+        expect(row.system_prompt_text).not_to include(%([1] From))
+      end
+    end
+  end
+
   describe "config.log_queries = false" do
     around do |ex|
       Curator.config.log_queries = false

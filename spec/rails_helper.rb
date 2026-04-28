@@ -10,6 +10,11 @@ require "rspec/rails"
 require "webmock/rspec"
 require "factory_bot_rails"
 
+# RubyLLM logs `WARN -- RubyLLM: API call failed, destroying message`
+# whenever a spec deliberately stubs a chat-completion error — the
+# library is right to log it in production but it's noise in tests.
+RubyLLM.config.log_level = Logger::ERROR
+
 FactoryBot.definition_file_paths = [ Curator::Engine.root.join("spec/factories") ]
 FactoryBot.find_definitions
 

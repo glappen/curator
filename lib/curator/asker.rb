@@ -23,7 +23,7 @@ module Curator
       @chat_model_override    = chat_model
     end
 
-    def call
+    def call(&stream_block)
       pipeline = Curator::Retrievers::Pipeline.new(
         query:          @raw_query,
         knowledge_base: @knowledge_base_arg,
@@ -34,7 +34,7 @@ module Curator
       effective_chat_model = @chat_model_override || pipeline.knowledge_base.chat_model
 
       retrieval_row = open_retrieval_row!(pipeline, effective_chat_model)
-      run(pipeline, retrieval_row, effective_chat_model)
+      run(pipeline, retrieval_row, effective_chat_model, &stream_block)
     end
 
     private
@@ -56,7 +56,7 @@ module Curator
       )
     end
 
-    def run(pipeline, retrieval_row, chat_model)
+    def run(pipeline, retrieval_row, chat_model, &stream_block)
       started_at = Time.current
       kb         = pipeline.knowledge_base
       hits       = pipeline.call(retrieval_row)
@@ -64,7 +64,7 @@ module Curator
       assembled = assemble_prompt(kb, hits, retrieval_row)
 
       chat            = create_chat!(chat_model, retrieval_row)
-      assistant_msg   = invoke_llm!(chat, assembled[:system_prompt_text], retrieval_row)
+      assistant_msg   = invoke_llm!(chat, assembled[:system_prompt_text], retrieval_row, &stream_block)
       ar_message      = chat.messages.order(:id).last
 
       duration = ((Time.current - started_at) * 1000).to_i
@@ -128,7 +128,9 @@ module Curator
       chat
     end
 
-    def invoke_llm!(chat, system_prompt_text, retrieval_row)
+    def invoke_llm!(chat, system_prompt_text, retrieval_row, &stream_block)
+      streaming = !stream_block.nil?
+
       Curator::Tracing.record(
         retrieval:       retrieval_row,
         step_type:       :llm_call,
@@ -138,14 +140,34 @@ module Curator
             input_tokens:  msg.input_tokens,
             output_tokens: msg.output_tokens,
             finish_reason: extract_finish_reason(msg),
-            streamed:      false
+            streamed:      streaming
           }
         }
       ) do
-        chat.with_instructions(system_prompt_text).ask(@raw_query)
+        chat.context = llm_context
+        chat.with_instructions(system_prompt_text)
+
+        if streaming
+          chat.ask(@raw_query) { |c| stream_block.call(c.content) if c.content }
+        else
+          chat.ask(@raw_query)
+        end
       end
     rescue RubyLLM::Error => e
       raise Curator::LLMError, "LLM call failed (#{e.class}): #{e.message}"
+    end
+
+    # Per-call RubyLLM context that propagates Curator's
+    # `llm_retry_count` into faraday-retry's `max:`. The retry
+    # middleware operates at the request layer — on a streaming
+    # ask, a mid-stream error *does* trigger a fresh HTTP request,
+    # which means partial deltas already yielded can be replayed
+    # on the next attempt. Streaming consumers that need
+    # at-most-once delivery should set `llm_retry_count = 0`.
+    def llm_context
+      @llm_context ||= RubyLLM.context do |c|
+        c.max_retries = Curator.config.llm_retry_count
+      end
     end
 
     # `finish_reason` is the only trace signal that distinguishes a

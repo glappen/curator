@@ -82,6 +82,44 @@ module RubyLLMStubs
            )
   end
 
+  # Stub OpenAI's /chat/completions endpoint to return an SSE-formatted
+  # streaming response. `deltas:` is the array of String content
+  # fragments yielded one per SSE `data:` event; `finish_reason` lands
+  # on the final delta event, and a usage chunk follows before
+  # `[DONE]`. Matches `body: hash_including("stream" => true)` so it
+  # can coexist with a non-streaming stub on the same URL.
+  def stub_chat_completion_stream(model: "gpt-5-mini",
+                                  deltas: [ "stubbed ", "assistant ", "reply" ],
+                                  input_tokens: 12, output_tokens: 8, finish_reason: "stop")
+    completion_id = "chatcmpl-stub-#{SecureRandom.hex(4)}"
+    body = build_sse_body(completion_id, model, deltas, input_tokens, output_tokens, finish_reason)
+    WebMock.stub_request(:post, CHAT_COMPLETION_URL)
+           .with(body: hash_including("model" => model, "stream" => true))
+           .to_return(
+             status:  200,
+             headers: { "Content-Type" => "text/event-stream" },
+             body:    body
+           )
+  end
+
+  # Streaming stub that emits `partial_deltas` and then an SSE error
+  # event so the request raises mid-stream — exercises the
+  # "no replay after first byte" constraint.
+  def stub_chat_completion_stream_error(model: "gpt-5-mini",
+                                        partial_deltas: [ "alpha ", "beta " ],
+                                        kind: :server_error)
+    completion_id = "chatcmpl-stub-#{SecureRandom.hex(4)}"
+    error_type    = kind == :server_error ? "server_error" : kind.to_s
+    body = build_sse_partial_then_error(completion_id, model, partial_deltas, error_type)
+    WebMock.stub_request(:post, CHAT_COMPLETION_URL)
+           .with(body: hash_including("model" => model, "stream" => true))
+           .to_return(
+             status:  200,
+             headers: { "Content-Type" => "text/event-stream" },
+             body:    body
+           )
+  end
+
   # Stub /chat/completions to fail. `:server_error` is the
   # whole-call retryable case; `:bad_request` is the permanent case
   # (RubyLLM raises BadRequestError).
@@ -100,6 +138,61 @@ module RubyLLMStubs
              headers: { "Content-Type" => "application/json" },
              body:    { "error" => { "type" => error_type, "message" => "stubbed #{kind}" } }.to_json
            )
+  end
+
+  # SSE body for a happy-path streaming completion: one event per
+  # delta, then a finish_reason event, then a usage event, then the
+  # terminating `[DONE]` line. Mirrors OpenAI's wire format closely
+  # enough that RubyLLM's StreamAccumulator builds an identical
+  # final Message to its non-streaming counterpart.
+  def build_sse_body(completion_id, model, deltas, input_tokens, output_tokens, finish_reason)
+    events = deltas.map do |delta|
+      sse_event(
+        "id"      => completion_id,
+        "object"  => "chat.completion.chunk",
+        "model"   => model,
+        "choices" => [ { "index" => 0, "delta" => { "content" => delta } } ]
+      )
+    end
+    events << sse_event(
+      "id"      => completion_id,
+      "object"  => "chat.completion.chunk",
+      "model"   => model,
+      "choices" => [ { "index" => 0, "delta" => {}, "finish_reason" => finish_reason } ]
+    )
+    events << sse_event(
+      "id"      => completion_id,
+      "object"  => "chat.completion.chunk",
+      "model"   => model,
+      "choices" => [],
+      "usage"   => {
+        "prompt_tokens"     => input_tokens,
+        "completion_tokens" => output_tokens,
+        "total_tokens"      => input_tokens + output_tokens
+      }
+    )
+    events << "data: [DONE]\n\n"
+    events.join
+  end
+
+  # SSE body that yields `partial_deltas` and then an `event: error`
+  # SSE chunk. RubyLLM's streaming module raises a provider error
+  # on that chunk type, which Asker wraps as Curator::LLMError.
+  def build_sse_partial_then_error(completion_id, model, partial_deltas, error_type)
+    events = partial_deltas.map do |delta|
+      sse_event(
+        "id"      => completion_id,
+        "object"  => "chat.completion.chunk",
+        "model"   => model,
+        "choices" => [ { "index" => 0, "delta" => { "content" => delta } } ]
+      )
+    end
+    events << "event: error\ndata: #{ { 'error' => { 'type' => error_type, 'message' => 'mid-stream disconnect' } }.to_json }\n\n"
+    events.join
+  end
+
+  def sse_event(payload)
+    "data: #{payload.to_json}\n\n"
   end
 
   # Deterministic L2-normalized vector for `text`. Each whitespace token

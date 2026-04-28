@@ -209,24 +209,27 @@ Milestones" → M4, plus the "Service Object API", "Citation System",
      (M3 `retriever_spec` gains a hit-row assertion). Hit insert
      failure marks the row `:failed`.
 
-- [ ] **Phase 6 — Streaming block.**
+- [x] **Phase 6 — Streaming block.**
    - `Asker#call(&block)` accepts an optional block. When given,
      the LLM call becomes
      `chat.with_instructions(system_prompt_text).ask(query) do
      |chunk| block.call(chunk.content) end` — Curator unwraps
      RubyLLM's `Chunk` to its `.content` `String` before yielding
-     to the caller.
+     to the caller. Nil-content chunks (the final usage-only
+     event) are filtered out.
    - `llm_call` trace payload sets `streamed: true` for the
      streaming branch.
    - **Retry interaction**: `Curator.config.llm_retry_count`
      wires into RubyLLM's faraday-retry middleware via
-     `RubyLLM.context { |c| c.retries = ... }` once at Asker
-     boot. Faraday-retry only retries pre-body, so once the first
-     streamed byte arrives, no replay — explicit limitation,
-     surfaces in the implementation-notes section. Non-streaming
-     asks get the full `llm_retry_count` retries; streaming asks
-     get up to `llm_retry_count` *connection* retries before any
-     content has flowed.
+     `RubyLLM.context { |c| c.max_retries = ... }`, applied per
+     ask by setting `chat.context = llm_context` before
+     `with_instructions`/`ask`. **Note**: faraday-retry's
+     "pre-body only" framing turns out to be aspirational for SSE
+     streams — when an SSE error chunk raises a retryable
+     RubyLLM error, the middleware *does* replay the request, and
+     partial deltas already yielded to the caller's block will
+     be re-yielded on the next attempt. Streaming consumers that
+     need at-most-once delivery should set `llm_retry_count = 0`.
    - The block is called for every ask that runs to the LLM /
      refusal step. Zero block calls only when the ask raises
      before reaching `llm_call` / refusal (e.g. embedding
@@ -449,20 +452,21 @@ spec/
       rows degrade gracefully.
 
 ### Phase 6 — Streaming block
-- [ ] `Curator.ask("...") { |delta| collected << delta }` → the
+- [x] `Curator.ask("...") { |delta| collected << delta }` → the
       block is called multiple times with `String` deltas
       whose concatenation equals `Answer#answer`.
-- [ ] Trace `llm_call` payload has `streamed: true`.
-- [ ] Non-streaming `Curator.ask("...")` payload has
+- [x] Trace `llm_call` payload has `streamed: true`.
+- [x] Non-streaming `Curator.ask("...")` payload has
       `streamed: false`.
-- [ ] `Curator.config.llm_retry_count = 3` propagates to
+- [x] `Curator.config.llm_retry_count = 3` propagates to
       RubyLLM's retry config (verified via WebMock — three
       503 responses then a 200 → call succeeds).
-- [ ] Streaming + 503 *after* first byte: WebMock simulates
-      partial stream then disconnect → Curator surfaces
-      `Curator::LLMError`, no replay, partial deltas already
-      yielded to the block. (Documents the streaming
-      one-shot constraint.)
+- [x] Streaming + SSE error event with `llm_retry_count = 0`:
+      partial deltas yielded once, `Curator::LLMError` raised,
+      single HTTP request, retrieval row marked `:failed`.
+      (Documents the at-most-once-delivery option for streaming
+      consumers; with retries enabled the partial deltas can
+      replay across attempts.)
 
 ### Phase 7 — Strict-grounding refusal
 - [ ] KB with `strict_grounding: true` + query that matches

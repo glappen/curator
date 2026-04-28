@@ -260,6 +260,127 @@ RSpec.describe "Curator.ask" do
     end
   end
 
+  describe "streaming block" do
+    let!(:chunk) { make_chunk(content: "alpha beta gamma", sequence: 0) }
+
+    before do
+      WebMock.reset!
+      stub_embed(model: kb.embedding_model)
+      stub_chat_completion_stream(
+        model:  kb.chat_model,
+        deltas: [ "Stubbed ", "answer ", "with ", "marker [1]." ]
+      )
+    end
+
+    it "yields String deltas whose concatenation equals Answer#answer" do
+      collected = []
+      answer = Curator.ask("alpha beta gamma", knowledge_base: kb) { |delta| collected << delta }
+
+      expect(collected).to                all(be_a(String))
+      expect(collected.size).to           be > 1
+      expect(collected.join).to           eq(answer.answer)
+      expect(answer.answer).to            eq("Stubbed answer with marker [1].")
+      expect(answer.refused?).to          be false
+      expect(answer.sources.first.chunk_id).to eq(chunk.id)
+    end
+
+    it "writes streamed: true in the llm_call trace payload" do
+      Curator.ask("alpha beta gamma", knowledge_base: kb) { |_| }
+
+      llm_step = Curator::Retrieval.sole.retrieval_steps.find_by(step_type: "llm_call")
+      expect(llm_step.payload["streamed"]).to be true
+    end
+
+    it "persists user + assistant messages on the chat (acts_as_chat callbacks fire on stream too)" do
+      Curator.ask("alpha beta gamma", knowledge_base: kb) { |_| }
+
+      roles = Chat.sole.messages.order(:id).pluck(:role)
+      expect(roles).to eq(%w[system user assistant])
+      assistant_msg = Chat.sole.messages.find_by(role: :assistant)
+      expect(assistant_msg.content).to              eq("Stubbed answer with marker [1].")
+      expect(Curator::Retrieval.sole.message_id).to eq(assistant_msg.id)
+    end
+  end
+
+  describe "Curator.config.llm_retry_count propagation" do
+    let!(:chunk) { make_chunk(content: "alpha beta gamma", sequence: 0) }
+
+    around do |ex|
+      original = Curator.config.llm_retry_count
+      Curator.config.llm_retry_count = 3
+      ex.run
+    ensure
+      Curator.config.llm_retry_count = original
+    end
+
+    it "retries POSTs on 503 up to llm_retry_count and succeeds on the next 200" do
+      WebMock.reset!
+      stub_embed(model: kb.embedding_model)
+
+      success_body = {
+        "id"      => "chatcmpl-stub-success",
+        "object"  => "chat.completion",
+        "created" => Time.now.to_i,
+        "model"   => kb.chat_model,
+        "choices" => [ {
+          "index"         => 0,
+          "message"       => { "role" => "assistant", "content" => "Recovered after retries." },
+          "finish_reason" => "stop"
+        } ],
+        "usage"   => { "prompt_tokens" => 1, "completion_tokens" => 1, "total_tokens" => 2 }
+      }.to_json
+      error_body = { "error" => { "type" => "service_unavailable", "message" => "stubbed" } }.to_json
+
+      WebMock.stub_request(:post, RubyLLMStubs::CHAT_COMPLETION_URL)
+             .with(body: hash_including("model" => kb.chat_model))
+             .to_return(
+               { status: 503, headers: { "Content-Type" => "application/json" }, body: error_body },
+               { status: 503, headers: { "Content-Type" => "application/json" }, body: error_body },
+               { status: 503, headers: { "Content-Type" => "application/json" }, body: error_body },
+               { status: 200, headers: { "Content-Type" => "application/json" }, body: success_body }
+             )
+
+      answer = Curator.ask("alpha beta gamma", knowledge_base: kb)
+
+      expect(answer.answer).to eq("Recovered after retries.")
+      expect(WebMock).to have_requested(:post, RubyLLMStubs::CHAT_COMPLETION_URL).times(4)
+    end
+  end
+
+  describe "streaming + mid-stream error" do
+    let!(:chunk) { make_chunk(content: "alpha beta gamma", sequence: 0) }
+
+    around do |ex|
+      original = Curator.config.llm_retry_count
+      # Disable retries so the documented "no replay" constraint holds —
+      # faraday-retry does in fact replay on retryable exceptions even after
+      # SSE bytes have flowed; setting the budget to zero is how callers opt
+      # out for idempotency-sensitive streaming consumers.
+      Curator.config.llm_retry_count = 0
+      ex.run
+    ensure
+      Curator.config.llm_retry_count = original
+    end
+
+    it "surfaces Curator::LLMError after partial deltas have been yielded — no replay" do
+      WebMock.reset!
+      stub_embed(model: kb.embedding_model)
+      stub_chat_completion_stream_error(
+        model:          kb.chat_model,
+        partial_deltas: [ "alpha ", "beta " ]
+      )
+
+      collected = []
+      expect {
+        Curator.ask("alpha beta gamma", knowledge_base: kb) { |delta| collected << delta }
+      }.to raise_error(Curator::LLMError, /LLM call failed/)
+
+      expect(collected).to eq([ "alpha ", "beta " ])
+      expect(WebMock).to have_requested(:post, RubyLLMStubs::CHAT_COMPLETION_URL).once
+      expect(Curator::Retrieval.sole).to be_failed
+    end
+  end
+
   describe "config.log_queries = false" do
     around do |ex|
       Curator.config.log_queries = false

@@ -20,6 +20,13 @@ class CreateCuratorKnowledgeBases < ActiveRecord::Migration[7.0]
       t.decimal  :similarity_threshold, null: false, default: 0.2, precision: 4, scale: 3
       t.string   :retrieval_strategy,   null: false, default: "hybrid"
       t.string   :tsvector_config,      null: false, default: "english"
+      # When true and retrieval returns zero hits, Curator.ask skips
+      # the LLM and returns a canned refusal. Note this fires only on
+      # *empty* hits — marginal hits that squeak past
+      # `similarity_threshold` still go to the LLM (which is also
+      # instructed to refuse from context, but Answer#refused? stays
+      # false). Tune `similarity_threshold` up to make the empty-hits
+      # path fire more often.
       t.boolean  :strict_grounding,     null: false, default: true
       t.boolean  :include_citations,    null: false, default: true
       t.text     :system_prompt

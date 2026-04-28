@@ -238,7 +238,7 @@ Milestones" → M4, plus the "Service Object API", "Citation System",
      used or not — RubyLLM's stream accumulator builds the final
      `Message#content` regardless.
 
-- [ ] **Phase 7 — Strict-grounding refusal path.**
+- [x] **Phase 7 — Strict-grounding refusal path.**
    - When `pipeline_hits.empty? && kb.strict_grounding`, Asker
      skips the LLM entirely:
      - Emits the `prompt_assembly` trace step (still useful — it
@@ -469,7 +469,7 @@ spec/
       replay across attempts.)
 
 ### Phase 7 — Strict-grounding refusal
-- [ ] KB with `strict_grounding: true` + query that matches
+- [x] KB with `strict_grounding: true` + query that matches
       no chunks above threshold:
       - `Answer#answer == REFUSAL_MESSAGE`
       - `Answer#refused?` is true
@@ -481,13 +481,13 @@ spec/
         `REFUSAL_MESSAGE`
       - Trace has `prompt_assembly` step, no `llm_call` step
       - `curator_retrievals.status == "success"`
-- [ ] Same KB with `strict_grounding: false`, same empty-hits
+- [x] Same KB with `strict_grounding: false`, same empty-hits
       query:
       - LLM is called (one `/v1/chat/completions` request)
       - `Answer#refused?` is false
       - Context block in the assembled prompt is empty but
         instructions are present
-- [ ] Streaming refusal: `Curator.ask("...") { |delta|
+- [x] Streaming refusal: `Curator.ask("...") { |delta|
       collected << delta }` against the strict-empty case →
       block called exactly once with `delta == REFUSAL_MESSAGE`.
 

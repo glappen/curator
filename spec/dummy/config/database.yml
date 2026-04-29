@@ -1,3 +1,20 @@
+<%
+  worktree_suffix = ""
+  dir = Dir.pwd
+
+  while dir != "/"
+    git_file = File.join(dir, ".git")
+    if File.file?(git_file)
+      content = File.read(git_file).strip
+      if content.start_with?("gitdir:")
+        worktree_name = File.basename(content.sub("gitdir:", "").strip)
+        worktree_suffix = "_#{worktree_name.gsub(/[^a-zA-Z0-9]/, '_').gsub(/_+/, '_').downcase}"
+        break
+      end
+    end
+    dir = File.dirname(dir)
+  end
+%>
 default: &default
   adapter: postgresql
   encoding: unicode
@@ -8,11 +25,11 @@ default: &default
 
 development:
   <<: *default
-  database: curator_dummy_development
+  database: curator_dummy_development<%= worktree_suffix %>
 
 test:
   <<: *default
-  database: curator_dummy_test
+  database: curator_dummy_test<%= worktree_suffix %>
 
 production:
   <<: *default

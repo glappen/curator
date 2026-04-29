@@ -119,6 +119,25 @@
   gap: var(--space-3);
 }
 
+.curator-ui .kb-switcher {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.curator-ui .kb-switcher__label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+/* Override the form-wide `select { width: 100% }` rule — the header
+   switcher needs to size to its content, not the full slot. */
+.curator-ui .kb-switcher__select {
+  width: auto;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-sm);
+}
+
 .curator-ui .app-main {
   flex: 1 1 auto;
   max-width: var(--max-width);

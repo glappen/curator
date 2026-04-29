@@ -1,0 +1,14 @@
+<% if (switcher = current_kb_for_switcher) %>
+  <div class="kb-switcher" data-controller="kb-switcher">
+    <label class="kb-switcher__label" for="kb-switcher-select">Knowledge base</label>
+    <select id="kb-switcher-select"
+            class="kb-switcher__select"
+            data-action="change->kb-switcher#change">
+      <% switcher.all.each do |kb| %>
+        <option value="<%= kb.slug %>" <%= "selected" if kb.id == switcher.current.id %>>
+          <%= kb.name %>
+        </option>
+      <% end %>
+    </select>
+  </div>
+<% end %>

@@ -268,7 +268,7 @@ LLM-token streaming + Query Console scope).
      (page 0, page > pages, per > max). Broadcast spec asserts
      header re-renders on Embedding create.
 
-- [ ] **Phase 7 — KB switcher Stimulus controller.**
+- [x] **Phase 7 — KB switcher Stimulus controller.**
    - Topbar slot in the layout populated only when
      `params[:knowledge_base_slug]` is set (i.e. inside any
      `kbs/:slug/*` request). Renders a `<select>` listing all KBs

@@ -1,0 +1,45 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Drops the per-worktree dummy databases using the same database.yml
+# that Rails uses. Only runs when inside a git worktree (where .git is a
+# file, not a directory) to avoid accidentally dropping main databases.
+
+require "erb"
+require "yaml"
+
+engine_root = Dir.pwd
+
+# Safety guard: only operate inside worktrees.
+git_path = File.join(engine_root, ".git")
+unless File.file?(git_path)
+  puts "Not in a git worktree — skipping database cleanup"
+  exit 0
+end
+
+config_path = File.join(engine_root, "spec", "dummy", "config", "database.yml")
+unless File.exist?(config_path)
+  warn "database.yml not found at #{config_path}"
+  exit 1
+end
+
+config = YAML.safe_load(ERB.new(File.read(config_path)).result, aliases: true)
+
+host     = config.dig("default", "host")     || "localhost"
+username = config.dig("default", "username") || "postgres"
+password = config.dig("default", "password")
+
+env = {}
+env["PGPASSWORD"] = password if password
+
+%w[development test].each do |env_name|
+  db_name = config.dig(env_name, "database")
+  next unless db_name
+
+  puts "Dropping database: #{db_name}"
+  cmd = [ "dropdb", "-h", host, "-U", username, "--if-exists", db_name ]
+  unless system(env, *cmd)
+    warn "Failed to drop database: #{db_name}"
+    exit 1
+  end
+end

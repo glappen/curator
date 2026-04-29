@@ -1,0 +1,18 @@
+[[pre-remove]]
+# Drop the per-worktree dummy databases when the worktree is deleted.
+# Runs in the worktree being removed (cwd = worktree root) so database.yml
+# resolves to the correct names. Uses repo_path because the script may not
+# exist in older worktrees.
+drop-dummy = "{{ repo_path }}/bin/drop-worktree-dbs"
+
+[[post-start]]
+# Regenerate the dummy app and provision per-worktree databases.
+# Must run post-start (not pre-start) so cwd is the new worktree — the
+# database.yml ERB derives its `_<worktree>` suffix by walking up from
+# Dir.pwd looking for the gitdir-marker `.git` file. Pre-start runs in
+# the main checkout, where that walk falls through and the suffix is
+# empty, so reset-dummy ends up rebuilding the main checkout's DBs.
+reset-dummy = "bin/reset-dummy"
+
+# Uncomment to auto-start the dummy app on a unique port per worktree.
+# dev = "cd spec/dummy && PORT={{ branch | hash_port }} bin/rails s"

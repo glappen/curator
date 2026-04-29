@@ -1,0 +1,140 @@
+<% locked = knowledge_base.persisted? %>
+
+<%= form_with model: knowledge_base, class: "form" do |f| %>
+  <%= render "curator/shared/form_errors", model: knowledge_base %>
+
+  <fieldset>
+    <legend>Display</legend>
+
+    <div class="field">
+      <%= f.label :name %>
+      <%= f.text_field :name, required: true %>
+    </div>
+
+    <div class="field">
+      <%= f.label :description %>
+      <%= f.text_area :description, rows: 3 %>
+    </div>
+
+    <div class="field">
+      <label>
+        <%= f.check_box :is_default %>
+        Use as the default knowledge base
+      </label>
+      <p class="field__hint">
+        Only one knowledge base can be the default. Selecting this clears the
+        flag on any other.
+      </p>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Retrieval</legend>
+
+    <div class="field">
+      <%= f.label :retrieval_strategy %>
+      <%= f.select :retrieval_strategy,
+                   [ %w[Hybrid hybrid], %w[Vector vector], %w[Keyword keyword] ] %>
+      <p class="field__hint">Hybrid combines vector + keyword via reciprocal rank fusion.</p>
+    </div>
+
+    <div class="field">
+      <%= f.label :chunk_limit, "Chunk limit (top-K)" %>
+      <%= f.number_field :chunk_limit, min: 1 %>
+    </div>
+
+    <div class="field">
+      <%= f.label :similarity_threshold %>
+      <%= f.number_field :similarity_threshold, step: 0.001, min: 0, max: 1 %>
+      <p class="field__hint">Cosine similarity cutoff (0–1). Lower returns more, looser hits.</p>
+    </div>
+
+    <div class="field">
+      <%= f.label :tsvector_config, "Postgres text-search config" %>
+      <%= f.select :tsvector_config, Curator::KnowledgeBase::TSVECTOR_CONFIGS %>
+    </div>
+
+    <div class="field">
+      <label>
+        <%= f.check_box :include_citations %>
+        Include citation markers in answers
+      </label>
+    </div>
+
+    <div class="field">
+      <label>
+        <%= f.check_box :strict_grounding %>
+        Strict grounding (refuse when retrieval returns zero hits)
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Advanced</legend>
+
+    <div class="field">
+      <%= f.label :chunk_size %>
+      <%= f.number_field :chunk_size, min: 1 %>
+      <p class="field__hint">Token target per chunk. Changing this only affects new ingests.</p>
+    </div>
+
+    <div class="field">
+      <%= f.label :chunk_overlap %>
+      <%= f.number_field :chunk_overlap, min: 0 %>
+      <p class="field__hint">Must be smaller than chunk size.</p>
+    </div>
+
+    <div class="field">
+      <%= f.label :chat_model %>
+      <%= f.text_field :chat_model %>
+    </div>
+
+    <div class="field">
+      <%= f.label :system_prompt %>
+      <%= f.text_area :system_prompt, rows: 6 %>
+      <p class="field__hint">
+        Optional. Prepended to every Q&amp;A prompt for this knowledge base.
+      </p>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Identity (locked after creation)</legend>
+
+    <div class="field">
+      <%= f.label :slug %>
+      <%= f.text_field :slug,
+                       required: true,
+                       disabled: locked,
+                       readonly: locked %>
+      <p class="field__hint">
+        URL identifier. Lowercase letters, digits, dashes, underscores.
+        <% if locked %>Cannot be changed after creation.<% end %>
+      </p>
+    </div>
+
+    <div class="field">
+      <%= f.label :embedding_model %>
+      <%= f.text_field :embedding_model,
+                       required: true,
+                       disabled: locked,
+                       readonly: locked %>
+      <p class="field__hint">
+        <% if locked %>
+          Cannot be changed after creation. Recreate the KB to switch the
+          embedding model, or run <code>curator:reembed</code> to migrate.
+        <% else %>
+          Vector dimension is fixed at install time; switching models later
+          requires a re-embed.
+        <% end %>
+      </p>
+    </div>
+  </fieldset>
+
+  <div class="form__actions">
+    <%= f.submit class: "btn btn--primary" %>
+    <%= link_to "Cancel",
+                (locked ? knowledge_base_path(knowledge_base) : root_path),
+                class: "btn" %>
+  </div>
+<% end %>

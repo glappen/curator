@@ -1,0 +1,41 @@
+<div class="card">
+  <h1><%= @knowledge_base.name %></h1>
+  <p class="card__meta">
+    <span class="text-mono"><%= @knowledge_base.slug %></span>
+    <% if @knowledge_base.is_default? %>
+      &middot; <span class="badge badge--accent">default</span>
+    <% end %>
+  </p>
+
+  <% if @knowledge_base.description.present? %>
+    <p><%= @knowledge_base.description %></p>
+  <% end %>
+
+  <h3>Configuration</h3>
+  <table class="table">
+    <tbody>
+      <tr><th scope="row">Retrieval strategy</th><td><%= @knowledge_base.retrieval_strategy %></td></tr>
+      <tr><th scope="row">Chunk limit (top-K)</th><td><%= @knowledge_base.chunk_limit %></td></tr>
+      <tr><th scope="row">Similarity threshold</th><td><%= @knowledge_base.similarity_threshold %></td></tr>
+      <tr><th scope="row">Text-search config</th><td><%= @knowledge_base.tsvector_config %></td></tr>
+      <tr><th scope="row">Include citations</th><td><%= @knowledge_base.include_citations? %></td></tr>
+      <tr><th scope="row">Strict grounding</th><td><%= @knowledge_base.strict_grounding? %></td></tr>
+      <tr><th scope="row">Chunk size</th><td><%= @knowledge_base.chunk_size %></td></tr>
+      <tr><th scope="row">Chunk overlap</th><td><%= @knowledge_base.chunk_overlap %></td></tr>
+      <tr><th scope="row">Embedding model</th><td><%= @knowledge_base.embedding_model %></td></tr>
+      <tr><th scope="row">Chat model</th><td><%= @knowledge_base.chat_model %></td></tr>
+    </tbody>
+  </table>
+
+  <div class="form__actions">
+    <%= link_to "Edit", edit_knowledge_base_path(@knowledge_base), class: "btn" %>
+    <%= button_to "Delete",
+                  knowledge_base_path(@knowledge_base),
+                  method: :delete,
+                  form: { data: { turbo_confirm:
+                    "Delete \"#{@knowledge_base.name}\" and all of its " \
+                    "documents, chunks, embeddings, and retrievals? " \
+                    "This cannot be undone." } },
+                  class: "btn btn--danger" %>
+  </div>
+</div>

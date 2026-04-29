@@ -183,6 +183,7 @@
   border-collapse: separate;
   border-spacing: 0;
   overflow: hidden;
+  margin: 0 0 var(--space-4);
 }
 
 .curator-ui .table th,

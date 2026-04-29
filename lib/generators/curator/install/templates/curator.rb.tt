@@ -71,6 +71,17 @@ Curator.configure do |config|
   #   config.force_ocr    = false        # true = re-OCR pages that already carry embedded text
 
   # ============================================================
+  # Knowledge base deletion
+  # ============================================================
+  #
+  # Deleting a knowledge base from the admin UI is **synchronous**: the
+  # request blocks while the cascade tears down every document, chunk,
+  # embedding, retrieval, and evaluation row that belonged to it.
+  # For a large KB this can take several seconds. v1 accepts the latency
+  # because operators rarely delete KBs; if that changes, we'll move to
+  # an async :deleting flow (mirroring documents).
+
+  # ============================================================
   # Tracing / logging
   # ============================================================
 

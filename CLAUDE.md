@@ -60,6 +60,13 @@ deferrals. `features/initial.md` captures product vision.
   analytics depend on it.
 - **Scoped chat UIs** share RubyLLM models but partition via `curator_scope`
   string on `chats`.
+- **Process-global inflection rule** registered at engine boot
+  (`lib/curator/engine.rb`): `irregular("knowledge_base", "knowledge_bases")`.
+  Without it, Rails' default inflector singularizes `bases → basis` and the
+  resource's URL helpers become `knowledge_basis_path`. The rule only affects
+  those two exact strings, so practical blast radius on host apps is nil — but
+  it does mutate global `ActiveSupport::Inflector` state, so don't be surprised
+  if you see it show up in an inflector dump.
 
 ## Testing notes
 

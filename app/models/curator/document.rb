@@ -2,7 +2,7 @@ module Curator
   class Document < ApplicationRecord
     self.table_name = "curator_documents"
 
-    STATUSES = %i[pending extracting embedding complete failed].freeze
+    STATUSES = %i[pending extracting embedding complete failed deleting].freeze
 
     belongs_to :knowledge_base, class_name: "Curator::KnowledgeBase"
     has_many   :chunks, class_name: "Curator::Chunk", dependent: :destroy
@@ -23,5 +23,14 @@ module Curator
     def partially_embedded?
       failed_chunk_count.positive?
     end
+
+    # ---- Broadcasts (M5) ----
+    # Phases 3 and 4 each append `after_*_commit` broadcast callbacks here
+    # in parallel worktrees:
+    #   - Phase 3: KB-card refresh on the "curator_knowledge_bases_index" stream
+    #   - Phase 4: per-KB document row replace/append/remove on `[kb, "documents"]`
+    # This region exists so both phases insert between the markers and the
+    # textual merge stays trivial.
+    # ---- /Broadcasts ----
   end
 end

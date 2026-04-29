@@ -126,6 +126,26 @@ RSpec.describe Curator::Generators::InstallGenerator, type: :generator do
     end
   end
 
+  describe "ActionCable check" do
+    it "warns when config/cable.yml is absent" do
+      output = run_generator
+      expect(output).to match(/warn.*cable\.yml not found/i)
+    end
+
+    it "is silent about cable when config/cable.yml exists" do
+      FileUtils.mkdir_p(File.join(destination_root, "config"))
+      File.write(File.join(destination_root, "config/cable.yml"), "development:\n  adapter: async\n")
+
+      output = run_generator
+      expect(output).not_to match(/cable\.yml not found/i)
+    end
+
+    it "always prints the production cable adapter reminder in the next-steps block" do
+      output = run_generator
+      expect(output).to match(/ActionCable adapter/)
+    end
+  end
+
   describe "RubyLLM chaining" do
     it "invokes ruby_llm:install — RubyLLM migrations end up in db/migrate" do
       run_generator

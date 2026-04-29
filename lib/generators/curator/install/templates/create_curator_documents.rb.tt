@@ -12,6 +12,11 @@ class CreateCuratorDocuments < ActiveRecord::Migration[7.0]
       t.string  :mime_type,    null: false
       t.bigint  :byte_size,    null: false
 
+      # Status values are enforced at the model level (Curator::Document::STATUSES):
+      # pending, extracting, embedding, complete, failed, deleting.
+      # `deleting` is set synchronously by the admin destroy flow before
+      # DestroyDocumentJob runs the cascade — the documents index hides
+      # `deleting` rows so the operator sees an instant disappear.
       t.string  :status,       null: false, default: "pending"
       t.text    :stage_error
 

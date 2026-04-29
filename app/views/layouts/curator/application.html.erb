@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Curator</title>
+    <%= csrf_meta_tags %>
+    <%= csp_meta_tag %>
+    <%= stylesheet_link_tag "curator/curator", media: "all" %>
+    <%= turbo_include_tags %>
+  </head>
+  <body class="curator-ui">
+    <div class="app-shell">
+      <header class="app-header">
+        <div class="app-header__inner">
+          <h1 class="app-header__title">
+            <%= link_to "Curator", curator.root_path %>
+          </h1>
+
+          <div class="app-header__slot">
+            <%# KB switcher slot — populated in Phase 7 %>
+          </div>
+        </div>
+      </header>
+
+      <main class="app-main">
+        <% flash.each do |level, message| %>
+          <div class="flash flash--<%= level %>"><%= message %></div>
+        <% end %>
+
+        <%= yield %>
+      </main>
+
+      <footer class="app-footer">
+        Curator <%= Curator::VERSION %>
+      </footer>
+    </div>
+  </body>
+</html>

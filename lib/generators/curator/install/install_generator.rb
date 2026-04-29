@@ -32,6 +32,17 @@ module Curator
         end
       end
 
+      def check_action_cable!
+        return if action_cable_configured?
+
+        say_status :warn,
+                   "config/cable.yml not found. Curator's admin UI uses ActionCable + " \
+                   "Turbo Streams to broadcast live document/KB updates. The engine " \
+                   "will install, but the admin UI will be silent until you configure " \
+                   "a cable adapter (Solid Cable on Rails 7.1+/8, Redis pre-7.1).",
+                   :yellow
+      end
+
       def install_ruby_llm
         # Active Storage was verified above; pass through so ruby_llm doesn't
         # re-run `rails active_storage:install` (which would fail in fresh
@@ -74,6 +85,11 @@ module Curator
         say_status :info,
                    "Next: bin/rails db:migrate && bin/rails curator:seed_defaults",
                    :green
+        say_status :info,
+                   "Production note: the admin UI requires a real ActionCable adapter " \
+                   "(Solid Cable on Rails 7.1+/8, Redis pre-7.1) to broadcast live " \
+                   "document/KB updates. The development async adapter is fine locally.",
+                   :green
       end
 
       # Public so specs can stub it without running against the real schema.
@@ -96,6 +112,10 @@ module Curator
 
       def active_storage_present?
         self.class.active_storage_installed?
+      end
+
+      def action_cable_configured?
+        File.exist?(File.join(destination_root, "config/cable.yml"))
       end
     end
   end

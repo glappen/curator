@@ -23,7 +23,7 @@ alternatives were considered and rejected, the rationale is captured.
 | Fallback extractor | `pdf-reader` + `ruby-docx` |
 | Background jobs | ActiveJob (any backend; Solid Queue recommended on Rails 8) |
 | File storage | Active Storage (S3, R2, or local disk) |
-| Admin UI stack | Hotwire (Turbo + Stimulus), Tailwind + daisyUI (pre-compiled) |
+| Admin UI stack | Hotwire (Turbo + Stimulus), vanilla CSS namespaced under `.curator-ui` |
 | Test framework | RSpec + `spec/dummy` host app |
 | Lint / style | Rails Omakase (`rubocop-rails-omakase`) |
 
@@ -62,10 +62,11 @@ curator-rails/
 │   │       ├── retrieval_step.rb
 │   │       └── evaluation.rb
 │   ├── views/
-│   │   └── curator/                         # Hotwire + Tailwind views
+│   │   └── curator/                         # Hotwire views
 │   └── assets/
-│       └── curator/
-│           └── curator.css                   # pre-compiled Tailwind+daisyUI
+│       └── stylesheets/
+│           └── curator/
+│               └── curator.css              # vanilla CSS, scoped under .curator-ui
 ├── lib/
 │   ├── curator.rb                            # top-level API
 │   ├── curator/
@@ -614,10 +615,13 @@ Empty-state aware:
 
 ### Asset strategy
 
-- **CSS**: pre-compiled `curator.css` (Tailwind + daisyUI) shipped in
-  `app/assets/curator/`. Host app just mounts the engine; no pipeline
-  participation required. Rebuilt by engine maintainers via
-  `rake curator:build_assets`.
+- **CSS**: vanilla `app/assets/stylesheets/curator/curator.css` shipped in
+  the engine and served via the host's asset pipeline (Propshaft or
+  Sprockets). Every rule is scoped under `.curator-ui` (the `<body>`
+  class on every engine view), giving deterministic isolation from the
+  host's stylesheets without a Node toolchain. Color, typography, and
+  spacing tokens defined as custom properties on `:root` so a future
+  `prefers-color-scheme: dark` rule is a one-block addition.
 - **JS**: importmap pins for Turbo + Stimulus controllers shipped by the engine.
 
 ---
@@ -715,7 +719,6 @@ curator:evaluations:export KB=<slug> FORMAT=<csv|json>
 curator:stats                           # print KB/doc/chunk/retrieval counts
 curator:ingest PATH=<dir> KB=<slug>     # CLI equivalent of Curator.ingest_directory
 curator:vacuum KB=<slug>                # remove orphaned chunks/embeddings
-curator:build_assets                    # (engine maintainers) rebuild curator.css
 ```
 
 Deferred to v2:
@@ -843,16 +846,21 @@ is demo-able end-to-end via CLI).
 - Error hierarchy (`Curator::EmbeddingError`, `RetrievalError`, `LLMError`)
 
 ### M5 — Admin UI Core
-- Pre-compiled Tailwind + daisyUI asset pipeline (engine ships `curator.css`)
+- Vanilla namespaced CSS (`app/assets/stylesheets/curator/curator.css`,
+  scoped under `.curator-ui`)
 - Layout, navigation, top-bar KB switcher
 - Landing page (empty-state aware stub; rich dashboard deferred to M9)
 - Knowledge Base CRUD + per-KB configuration form
 - Document management (drag-drop upload, list with status, delete, re-ingest
   trigger)
 - Chunk Inspector
+- Live document/KB list updates via ActionCable + Turbo Streams broadcasts
+  (host must have a configured cable adapter — Solid Cable on Rails
+  7.1+/8, Redis pre-7.1)
 
 ### M6 — Interactive Features + Public API
-- Streaming infrastructure (Turbo Streams in admin UI, `/api/stream` endpoint)
+- Streaming infrastructure (`/api/stream` LLM-token endpoint; admin-UI
+  Turbo Streams broadcasts shipped in M5)
 - Query Testing Console (live streaming answer + retrieved chunks side-by-side;
   tweak params and re-run)
 - REST API controllers: `/api/query`, `/api/retrieve`, `/api/stream`
@@ -879,8 +887,7 @@ is demo-able end-to-end via CLI).
 - Scoped `curator:chat_ui` generator (`curator_scope` partitioning on chats)
 - Rich dashboard (tiles, needs-attention panel, activity feed, per-KB nav
   cards)
-- Remaining rake tasks (`curator:stats`, `curator:vacuum`,
-  `curator:build_assets`)
+- Remaining rake tasks (`curator:stats`, `curator:vacuum`)
 - Documentation (README, configuration reference, upgrade guide, sample host
   app repository link)
 - Release checklist (RubyGems metadata, changelog, version tagging)

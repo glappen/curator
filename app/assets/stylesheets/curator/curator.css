@@ -1,0 +1,385 @@
+/*
+ * Curator admin UI — vanilla CSS, scoped under .curator-ui.
+ *
+ * Visual reference: Rails 8 Mission Control / Solid Queue dashboard.
+ * Light theme only in v1; dark mode is a future addition (every color
+ * is a custom property on :root so a `prefers-color-scheme: dark` block
+ * can override the token set without touching component rules).
+ *
+ * Every selector is namespaced under .curator-ui so the engine's styles
+ * cannot leak into the host application's own pages.
+ */
+
+.curator-ui {
+  /* ---- Color tokens ---- */
+  --color-bg:           #f7f8fa;
+  --color-surface:      #ffffff;
+  --color-surface-alt:  #fafbfc;
+  --color-border:       #e5e7eb;
+  --color-border-strong:#d1d5db;
+  --color-text:         #111827;
+  --color-text-muted:   #6b7280;
+  --color-text-subtle:  #9ca3af;
+  --color-accent:       #2563eb;
+  --color-accent-hover: #1d4ed8;
+  --color-accent-soft:  #eff6ff;
+
+  --color-success:      #047857;
+  --color-success-bg:   #ecfdf5;
+  --color-warning:      #b45309;
+  --color-warning-bg:   #fffbeb;
+  --color-danger:       #b91c1c;
+  --color-danger-bg:    #fef2f2;
+  --color-neutral:      #4b5563;
+  --color-neutral-bg:   #f3f4f6;
+
+  /* ---- Typography tokens ---- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono",
+               monospace;
+  --font-size-sm: 12px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 24px;
+
+  /* ---- Spacing + shape tokens ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
+
+  /* ---- Layout ---- */
+  --max-width: 1200px;
+
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-md);
+  line-height: 1.5;
+  margin: 0;
+  min-height: 100vh;
+}
+
+.curator-ui *,
+.curator-ui *::before,
+.curator-ui *::after {
+  box-sizing: border-box;
+}
+
+/* ---- Layout primitives ---- */
+.curator-ui .app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.curator-ui .app-header {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.curator-ui .app-header__inner {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.curator-ui .app-header__title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.curator-ui .app-header__title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.curator-ui .app-header__slot {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.curator-ui .app-main {
+  flex: 1 1 auto;
+  max-width: var(--max-width);
+  width: 100%;
+  margin: 0 auto;
+  padding: var(--space-5);
+}
+
+.curator-ui .app-footer {
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  padding: var(--space-3) var(--space-5);
+  text-align: center;
+}
+
+/* ---- Headings + text ---- */
+.curator-ui h1 { font-size: var(--font-size-2xl); font-weight: 600; margin: 0 0 var(--space-4); }
+.curator-ui h2 { font-size: var(--font-size-xl); font-weight: 600; margin: 0 0 var(--space-3); }
+.curator-ui h3 { font-size: var(--font-size-lg); font-weight: 600; margin: 0 0 var(--space-3); }
+
+.curator-ui p { margin: 0 0 var(--space-3); }
+.curator-ui .text-muted { color: var(--color-text-muted); }
+.curator-ui .text-subtle { color: var(--color-text-subtle); }
+.curator-ui .text-mono { font-family: var(--font-mono); }
+
+.curator-ui a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+.curator-ui a:hover { color: var(--color-accent-hover); text-decoration: underline; }
+
+/* ---- Cards ---- */
+.curator-ui .card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-sm);
+}
+
+.curator-ui .card + .card { margin-top: var(--space-4); }
+
+.curator-ui .card__title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+}
+
+.curator-ui .card__meta {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* ---- Tables ---- */
+.curator-ui .table {
+  width: 100%;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+}
+
+.curator-ui .table th,
+.curator-ui .table td {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.curator-ui .table th {
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.curator-ui .table tr:last-child td { border-bottom: 0; }
+.curator-ui .table tbody tr:hover { background: var(--color-surface-alt); }
+
+/* ---- Forms ---- */
+.curator-ui .form { display: flex; flex-direction: column; gap: var(--space-5); }
+
+.curator-ui .form fieldset {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-surface);
+}
+
+.curator-ui .form legend {
+  padding: 0 var(--space-2);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.curator-ui .form .field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.curator-ui .form .field:last-child { margin-bottom: 0; }
+
+.curator-ui .form label {
+  font-weight: 500;
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+}
+
+.curator-ui .form .field__hint {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.curator-ui input[type="text"],
+.curator-ui input[type="number"],
+.curator-ui input[type="email"],
+.curator-ui input[type="search"],
+.curator-ui input[type="url"],
+.curator-ui input[type="file"],
+.curator-ui select,
+.curator-ui textarea {
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  width: 100%;
+}
+
+.curator-ui textarea { min-height: 6rem; resize: vertical; }
+
+.curator-ui input:focus,
+.curator-ui select:focus,
+.curator-ui textarea:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+  border-color: var(--color-accent);
+}
+
+.curator-ui input[disabled],
+.curator-ui select[disabled],
+.curator-ui textarea[disabled],
+.curator-ui input[readonly],
+.curator-ui textarea[readonly] {
+  background: var(--color-neutral-bg);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.curator-ui .form__actions {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+/* ---- Buttons ---- */
+.curator-ui .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+
+.curator-ui .btn:hover { background: var(--color-surface-alt); text-decoration: none; }
+
+.curator-ui .btn--primary {
+  background: var(--color-accent);
+  color: #ffffff;
+  border-color: var(--color-accent);
+}
+.curator-ui .btn--primary:hover { background: var(--color-accent-hover); border-color: var(--color-accent-hover); color: #ffffff; }
+
+.curator-ui .btn--danger {
+  background: var(--color-surface);
+  color: var(--color-danger);
+  border-color: var(--color-border-strong);
+}
+.curator-ui .btn--danger:hover { background: var(--color-danger-bg); }
+
+.curator-ui .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+/* ---- Badges ---- */
+.curator-ui .badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  background: var(--color-neutral-bg);
+  color: var(--color-neutral);
+}
+
+.curator-ui .badge--success    { background: var(--color-success-bg); color: var(--color-success); }
+.curator-ui .badge--warning    { background: var(--color-warning-bg); color: var(--color-warning); }
+.curator-ui .badge--danger     { background: var(--color-danger-bg);  color: var(--color-danger); }
+.curator-ui .badge--neutral    { background: var(--color-neutral-bg); color: var(--color-neutral); }
+.curator-ui .badge--accent     { background: var(--color-accent-soft); color: var(--color-accent); }
+
+.curator-ui .badge--embedded   { background: var(--color-success-bg); color: var(--color-success); }
+.curator-ui .badge--missing    { background: var(--color-neutral-bg); color: var(--color-neutral); }
+
+/* ---- Modal ---- */
+.curator-ui .modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.curator-ui .modal {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-md);
+  max-width: 32rem;
+  width: 100%;
+}
+
+/* ---- Flash messages ---- */
+.curator-ui .flash {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-4);
+  border: 1px solid transparent;
+}
+.curator-ui .flash--notice { background: var(--color-success-bg); color: var(--color-success); border-color: var(--color-success); }
+.curator-ui .flash--alert  { background: var(--color-danger-bg);  color: var(--color-danger);  border-color: var(--color-danger); }
+
+/* ---- Code/pre blocks (chunk inspector etc.) ---- */
+.curator-ui pre {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3) var(--space-4);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  margin: 0;
+}

@@ -1,5 +1,7 @@
 module Curator
   class KnowledgeBase < ApplicationRecord
+    include Turbo::Broadcastable
+
     self.table_name = "curator_knowledge_bases"
 
     DEFAULT_LOCK_KEY        = "curator_kb_default".freeze
@@ -36,6 +38,29 @@ module Curator
     validate :chunk_overlap_smaller_than_chunk_size
 
     before_save :unset_prior_default, if: -> { is_default? && is_default_changed? }
+
+    # ---- Broadcasts (M5 Phase 3) ----
+    # Card prepended on create, replaced on update, removed on destroy.
+    # The index view subscribes to "curator_knowledge_bases_index" and
+    # holds a `<turbo-frame id="curator_knowledge_bases_cards">` container
+    # for new cards and per-KB `<turbo-frame id="<%= dom_id(kb, :card) %>">`
+    # frames for replace/remove.
+    after_create_commit -> {
+      broadcast_prepend_to "curator_knowledge_bases_index",
+                           target:  "curator_knowledge_bases_cards",
+                           partial: "curator/knowledge_bases/card",
+                           locals:  { kb: self }
+    }
+    after_update_commit -> {
+      broadcast_replace_to "curator_knowledge_bases_index",
+                           target:  ActionView::RecordIdentifier.dom_id(self, :card),
+                           partial: "curator/knowledge_bases/card",
+                           locals:  { kb: self }
+    }
+    after_destroy_commit -> {
+      broadcast_remove_to "curator_knowledge_bases_index",
+                          target: ActionView::RecordIdentifier.dom_id(self, :card)
+    }
 
     # Strong-params permit list, partitioned by form action. `embedding_model`
     # and `slug` are creation-time-only — `update` permits the editable subset

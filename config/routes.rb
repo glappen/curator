@@ -1,10 +1,9 @@
 Curator::Engine.routes.draw do
-  root "dashboard#index"
+  root "knowledge_bases#index"
 
   resources :knowledge_bases,
             path:   "kbs",
-            param:  :slug,
-            except: [ :index ] do
+            param:  :slug do
     # Nested resources (Phase 4) and member routes (Phase 5)
     # land inside this block.
   end

@@ -1,5 +1,7 @@
 module Curator
   class Document < ApplicationRecord
+    include Turbo::Broadcastable
+
     self.table_name = "curator_documents"
 
     STATUSES = %i[pending extracting embedding complete failed deleting].freeze
@@ -31,6 +33,30 @@ module Curator
     #   - Phase 4: per-KB document row replace/append/remove on `[kb, "documents"]`
     # This region exists so both phases insert between the markers and the
     # textual merge stays trivial.
+
+    # Phase 3 — KB index card refresh on doc create/update/destroy. The card
+    # partial computes doc count + last-ingested-at, so any document change
+    # to a KB's collection should re-render its card.
+    after_create_commit  -> { broadcast_kb_card_refresh }
+    after_update_commit  -> { broadcast_kb_card_refresh }
+    after_destroy_commit -> { broadcast_kb_card_refresh }
     # ---- /Broadcasts ----
+
+    private
+
+    # Skip when the parent KB is itself being destroyed (cascade): the KB's
+    # own `after_destroy_commit` will broadcast a `remove` for the same
+    # frame, and rendering the card partial against an in-memory destroyed
+    # KB would issue a count query that returns 0 against a row that no
+    # longer exists.
+    def broadcast_kb_card_refresh
+      kb = knowledge_base
+      return if kb.nil? || kb.destroyed?
+
+      broadcast_replace_to "curator_knowledge_bases_index",
+                           target:  ActionView::RecordIdentifier.dom_id(kb, :card),
+                           partial: "curator/knowledge_bases/card",
+                           locals:  { kb: kb }
+    end
   end
 end

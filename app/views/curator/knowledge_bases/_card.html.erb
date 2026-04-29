@@ -1,0 +1,45 @@
+<%# URL helpers come from `Curator::Engine.routes.url_helpers` so the partial
+    renders correctly both in normal request flow AND in Turbo broadcast
+    context (broadcasts render via ApplicationController.renderer, which
+    does not automatically expose engine routes via the unqualified helpers).
+    Phase 3 link target — `kbs/:slug/documents` — is mounted by Phase 4. %>
+<% url = Curator::Engine.routes.url_helpers %>
+<%# `docs_count` and `last_ingested` are preloaded by the index controller
+    via two grouped aggregates. The broadcast render path (KB or Document
+    after_*_commit) doesn't have those locals, so fall back to live queries
+    against the single KB being re-rendered. %>
+<% docs_count    = local_assigns.fetch(:docs_count)    { kb.documents.count } %>
+<% last_ingested = local_assigns.fetch(:last_ingested) { kb.documents.maximum(:created_at) } %>
+<%= turbo_frame_tag dom_id(kb, :card), class: "card kb-card" do %>
+  <h2 class="card__title">
+    <%= link_to kb.name, "#{url.knowledge_base_path(kb)}/documents" %>
+    <% if kb.is_default? %>
+      <span class="badge badge--accent">default</span>
+    <% end %>
+  </h2>
+
+  <p class="card__meta">
+    <span class="text-mono"><%= kb.slug %></span>
+  </p>
+
+  <% if kb.description.present? %>
+    <p class="kb-card__description"><%= kb.description %></p>
+  <% end %>
+
+  <dl class="kb-card__stats">
+    <div>
+      <dt>Documents</dt>
+      <dd><%= docs_count %></dd>
+    </div>
+    <div>
+      <dt>Last ingested</dt>
+      <dd>
+        <%= last_ingested ? "#{time_ago_in_words(last_ingested)} ago" : "—" %>
+      </dd>
+    </div>
+  </dl>
+
+  <div class="kb-card__actions">
+    <%= link_to "Edit", url.edit_knowledge_base_path(kb), class: "btn" %>
+  </div>
+<% end %>

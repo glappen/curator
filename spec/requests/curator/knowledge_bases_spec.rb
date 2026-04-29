@@ -11,6 +11,66 @@ RSpec.describe "Curator::KnowledgeBases", type: :request do
     }
   end
 
+  describe "GET /curator (index)" do
+    it "renders one card per KB with name link to documents and doc count" do
+      kb = create(:curator_knowledge_base, slug: "support", name: "Support")
+      create_list(:curator_document, 3, knowledge_base: kb)
+      other = create(:curator_knowledge_base, slug: "other", name: "Other")
+
+      get "/curator"
+
+      expect(response).to have_http_status(:ok)
+      body = response.body
+      expect(body).to include("Knowledge bases")
+      expect(body).to include(%(href="/curator/kbs/support/documents"))
+      expect(body).to include(%(href="/curator/kbs/other/documents"))
+      expect(body).to include("New knowledge base")
+      # Each KB rendered into its own card frame so broadcasts can target it.
+      # `dom_id(kb, :card)` produces "card_knowledge_base_<id>".
+      expect(body).to include(%(id="card_knowledge_base_#{kb.id}"))
+      expect(body).to include(%(id="card_knowledge_base_#{other.id}"))
+      # Doc count for the support KB shows 3.
+      card = body[/card_knowledge_base_#{kb.id}.*?<\/turbo-frame>/m]
+      expect(card).to include("3")
+    end
+
+    # Locks in the controller's grouped-aggregate preload. Without it the
+    # card partial issues `count` + `maximum(:created_at)` per KB on every
+    # render — 2N extra queries on the landing page.
+    it "renders without per-KB document count/max queries (no N+1)" do
+      create_list(:curator_knowledge_base, 5).each do |kb|
+        create_list(:curator_document, 2, knowledge_base: kb)
+      end
+
+      counts_seen = 0
+      maxes_seen  = 0
+      callback = ->(_n, _s, _f, _id, payload) do
+        sql = payload[:sql]
+        counts_seen += 1 if sql.include?("COUNT") && sql.include?("curator_documents")
+        maxes_seen  += 1 if sql.include?("MAX")   && sql.include?("curator_documents")
+      end
+
+      ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+        get "/curator"
+      end
+
+      expect(response).to have_http_status(:ok)
+      # One grouped COUNT + one grouped MAX, regardless of KB count.
+      expect(counts_seen).to eq(1)
+      expect(maxes_seen).to  eq(1)
+    end
+
+    it "renders the empty-state onboarding panel when no KBs exist" do
+      get "/curator"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Create your first knowledge base")
+      expect(response.body).to include(%(href="/curator/kbs/new"))
+      # Cards grid container must NOT be rendered in the empty case.
+      expect(response.body).not_to include(%(id="curator_knowledge_bases_cards"))
+    end
+  end
+
   describe "GET /curator/kbs/new" do
     it "renders the tiered form with all four fieldsets" do
       get "/curator/kbs/new"

@@ -1,0 +1,19 @@
+<%= turbo_stream_from "curator_knowledge_bases_index" %>
+
+<% if @knowledge_bases.any? %>
+  <div class="page-header">
+    <h1>Knowledge bases</h1>
+    <%= link_to "New knowledge base", new_knowledge_base_path, class: "btn btn--primary" %>
+  </div>
+
+  <div id="curator_knowledge_bases_cards" class="cards-grid">
+    <% @knowledge_bases.each do |kb| %>
+      <%= render "curator/knowledge_bases/card",
+                 kb:            kb,
+                 docs_count:    @doc_counts.fetch(kb.id, 0),
+                 last_ingested: @last_ingested[kb.id] %>
+    <% end %>
+  </div>
+<% else %>
+  <%= render "curator/knowledge_bases/empty_state" %>
+<% end %>

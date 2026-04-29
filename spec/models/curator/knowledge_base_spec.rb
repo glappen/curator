@@ -167,6 +167,57 @@ RSpec.describe Curator::KnowledgeBase, type: :model do
     end
   end
 
+  describe "Phase 3 broadcasts to curator_knowledge_bases_index", :broadcasts do
+    # turbo-rails broadcasts to the literal stream name on ActionCable —
+    # the signed_stream_name is only used for the client's subscription
+    # identifier, not for the pubsub topic.
+    let(:stream) { "curator_knowledge_bases_index" }
+
+    it "broadcasts a prepend on KB create" do
+      expect {
+        create(:curator_knowledge_base, slug: "broadcast-create")
+      }.to have_broadcasted_to(stream).from_channel(Turbo::StreamsChannel).exactly(:once)
+    end
+
+    it "broadcasts a replace on KB update" do
+      kb = create(:curator_knowledge_base, slug: "broadcast-update")
+
+      expect {
+        kb.update!(name: "Renamed")
+      }.to have_broadcasted_to(stream).from_channel(Turbo::StreamsChannel).exactly(:once)
+    end
+
+    it "broadcasts a remove on KB destroy" do
+      kb = create(:curator_knowledge_base, slug: "broadcast-destroy")
+
+      expect {
+        kb.destroy!
+      }.to have_broadcasted_to(stream).from_channel(Turbo::StreamsChannel).exactly(:once)
+    end
+
+    it "broadcasts a card refresh when a document is created on a KB" do
+      kb = create(:curator_knowledge_base, slug: "doc-broadcasts")
+
+      expect {
+        create(:curator_document, knowledge_base: kb)
+      }.to have_broadcasted_to(stream).from_channel(Turbo::StreamsChannel).exactly(:once)
+    end
+
+    # Cascade guard: when a KB is destroyed, its documents are destroyed
+    # via dependent: :destroy in the same transaction. Each doc's
+    # after_destroy_commit would otherwise try to render the card partial
+    # against a destroyed KB. The guard skips those, leaving only the KB's
+    # own remove broadcast.
+    it "broadcasts exactly once per destroyed KB even with documents" do
+      kb = create(:curator_knowledge_base, slug: "cascade-broadcasts")
+      create_list(:curator_document, 2, knowledge_base: kb)
+
+      expect {
+        kb.destroy!
+      }.to have_broadcasted_to(stream).from_channel(Turbo::StreamsChannel).exactly(:once)
+    end
+  end
+
   describe ".permitted_params" do
     it "permits embedding_model + slug on :create" do
       params = described_class.permitted_params(action: :create)

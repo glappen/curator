@@ -162,6 +162,10 @@
 }
 
 .curator-ui .card + .card { margin-top: var(--space-4); }
+/* The sibling-margin rule above is for stacked single-column card layouts
+   (e.g. the show page). Inside a grid the parent provides the gap, and the
+   margin-top would shrink/offset cards #2…N relative to card #1. Reset. */
+.curator-ui .cards-grid .card + .card { margin-top: 0; }
 
 .curator-ui .card__title {
   font-size: var(--font-size-lg);
@@ -172,6 +176,105 @@
 .curator-ui .card__meta {
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
+}
+
+/* ---- Page header (title row with right-aligned CTA) ---- */
+.curator-ui .page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.curator-ui .page-header h1 { margin: 0; }
+
+/* ---- Cards grid (KB landing) ---- */
+.curator-ui .cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+  align-items: stretch;
+}
+
+/* `turbo-frame` is a custom element and defaults to `display: inline` in
+   browsers without a UA stylesheet rule for it. Force block so it lays out
+   as a normal grid item. */
+.curator-ui turbo-frame { display: block; }
+
+.curator-ui .kb-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  /* Fill the grid cell so cards in the same row are the same height. The
+     grid stretches cells to the row's tallest item, but the turbo-frame
+     element only takes its content height unless told otherwise. With
+     `margin-top: auto` on .kb-card__actions, actions stay pinned to the
+     bottom regardless of content length. */
+  height: 100%;
+}
+
+.curator-ui .kb-card .card__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.curator-ui .kb-card__description {
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.curator-ui .kb-card__stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.curator-ui .kb-card__stats dt {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 var(--space-1);
+}
+
+.curator-ui .kb-card__stats dd {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+
+.curator-ui .kb-card__actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: auto;
+}
+
+/* ---- Empty state (zero-KB onboarding panel) ---- */
+.curator-ui .empty-state {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-7) var(--space-5);
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+}
+
+.curator-ui .empty-state h1 { margin-bottom: var(--space-3); }
+
+.curator-ui .empty-state p {
+  max-width: 36rem;
+  margin: 0 auto var(--space-5);
+}
+
+.curator-ui .empty-state__actions {
+  display: flex;
+  justify-content: center;
 }
 
 /* ---- Tables ---- */

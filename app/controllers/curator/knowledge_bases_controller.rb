@@ -2,6 +2,15 @@ module Curator
   class KnowledgeBasesController < ApplicationController
     before_action :set_knowledge_base, only: %i[show edit update destroy]
 
+    def index
+      @knowledge_bases = KnowledgeBase.order(:name, :id)
+      # Two grouped aggregates — constant query count independent of the
+      # number of KBs. Without these the card partial issues `count` +
+      # `maximum(:created_at)` per KB on every render.
+      @doc_counts    = Document.group(:knowledge_base_id).count
+      @last_ingested = Document.group(:knowledge_base_id).maximum(:created_at)
+    end
+
     def show; end
 
     def new

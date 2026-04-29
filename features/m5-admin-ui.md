@@ -90,7 +90,7 @@ LLM-token streaming + Query Console scope).
      `Curator::Document` enum spec covers `:deleting` round-trip.
      `bundle exec rubocop` clean.
 
-- [ ] **Phase 2 — Knowledge Base CRUD + tiered form.**
+- [x] **Phase 2 — Knowledge Base CRUD + tiered form.**
    - `Curator::KnowledgeBasesController` (`new` / `create` / `show`
      / `edit` / `update` / `destroy`); index covered in Phase 3.
      Routes: `resources :knowledge_bases, path: "kbs",

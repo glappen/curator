@@ -37,8 +37,33 @@ module Curator
 
     before_save :unset_prior_default, if: -> { is_default? && is_default_changed? }
 
+    # Strong-params permit list, partitioned by form action. `embedding_model`
+    # and `slug` are creation-time-only — `update` permits the editable subset
+    # so a hand-crafted POST can't bypass the `disabled` form attributes and
+    # corrupt embeddings or break URLs.
+    EDITABLE_PARAMS = %i[
+      name description is_default
+      retrieval_strategy chunk_limit similarity_threshold
+      tsvector_config include_citations strict_grounding
+      chunk_size chunk_overlap chat_model system_prompt
+    ].freeze
+    LOCKED_PARAMS = %i[embedding_model slug].freeze
+
+    def self.permitted_params(action:)
+      case action.to_sym
+      when :new, :create then EDITABLE_PARAMS + LOCKED_PARAMS
+      when :edit, :update then EDITABLE_PARAMS
+      else raise ArgumentError, "unknown action: #{action.inspect}"
+      end
+    end
+
     def self.default
       find_by(is_default: true)
+    end
+
+    # Routes use `param: :slug`, so URL helpers must read slug, not id.
+    def to_param
+      slug
     end
 
     def self.default!

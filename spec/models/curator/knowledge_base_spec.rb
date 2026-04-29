@@ -159,4 +159,31 @@ RSpec.describe Curator::KnowledgeBase, type: :model do
       expect(Curator::Evaluation.count).to     eq(0)
     end
   end
+
+  describe "#to_param" do
+    it "returns the slug so URL helpers honor `param: :slug` in routes" do
+      kb = create(:curator_knowledge_base, slug: "support")
+      expect(kb.to_param).to eq("support")
+    end
+  end
+
+  describe ".permitted_params" do
+    it "permits embedding_model + slug on :create" do
+      params = described_class.permitted_params(action: :create)
+      expect(params).to include(:embedding_model, :slug, :name, :chunk_size)
+    end
+
+    it "excludes embedding_model + slug on :update" do
+      params = described_class.permitted_params(action: :update)
+      expect(params).not_to include(:embedding_model)
+      expect(params).not_to include(:slug)
+      expect(params).to     include(:name, :chunk_size, :retrieval_strategy)
+    end
+
+    it "raises on an unknown action" do
+      expect {
+        described_class.permitted_params(action: :patch)
+      }.to raise_error(ArgumentError)
+    end
+  end
 end

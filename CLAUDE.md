@@ -75,6 +75,9 @@ deferrals. `features/initial.md` captures product vision.
 - Factories under `spec/factories/`. Fixtures under `spec/fixtures/`.
 - Both extractor adapters (Kreuzberg + basic) must pass the same adapter
   contract suite.
+- **Turbo broadcasts are suppressed by default** (see
+  `spec/support/turbo_helpers.rb`). Tag an example or describe block
+  `:broadcasts` to opt back in when asserting `have_broadcasted_to`.
 
 ## Verification — required after every change
 

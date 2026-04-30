@@ -90,6 +90,15 @@ module Curator
                    "(Solid Cable on Rails 7.1+/8, Redis pre-7.1) to broadcast live " \
                    "document/KB updates. The development async adapter is fine locally.",
                    :green
+        unless importmap_present?
+          say_status :info,
+                     "JS note: the admin UI's KB switcher and drag-drop upload overlay " \
+                     "ship as Stimulus controllers wired via importmap. Your app is not " \
+                     "using importmap-rails — file picker + manual nav still work, but " \
+                     "to enable the enhanced UX import \"curator\" from your jsbundling " \
+                     "entry.",
+                     :yellow
+        end
       end
 
       # Public so specs can stub it without running against the real schema.
@@ -116,6 +125,10 @@ module Curator
 
       def action_cable_configured?
         File.exist?(File.join(destination_root, "config/cable.yml"))
+      end
+
+      def importmap_present?
+        File.exist?(File.join(destination_root, "config/importmap.rb"))
       end
     end
   end

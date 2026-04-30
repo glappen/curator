@@ -481,5 +481,13 @@ RSpec.describe "Curator::Documents", type: :request do
 
       expect { embedding.destroy! }.to have_broadcasted_to(stream)
     end
+
+    it "replaces the header turbo-frame when the document status changes" do
+      document # create
+
+      expect {
+        document.update!(status: :complete)
+      }.to have_broadcasted_to(stream)
+    end
   end
 end

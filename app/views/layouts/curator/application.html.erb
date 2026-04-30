@@ -8,6 +8,14 @@
     <%= csp_meta_tag %>
     <%= stylesheet_link_tag "curator/curator", media: "all" %>
     <%= turbo_include_tags %>
+    <%# Boots the engine's private Stimulus Application (kb switcher,
+        drag-drop). `respond_to?` so host apps using jsbundling/esbuild
+        — which don't load importmap-rails — render the layout without
+        crashing; those hosts wire `import "curator"` from their own
+        bundle. %>
+    <% if respond_to?(:javascript_importmap_tags) %>
+      <%= javascript_importmap_tags "curator" %>
+    <% end %>
   </head>
   <body class="curator-ui">
     <div class="app-shell">

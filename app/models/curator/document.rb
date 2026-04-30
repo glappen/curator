@@ -61,6 +61,14 @@ module Curator
     after_create_commit  -> { broadcast_document_row(:append) }
     after_update_commit  -> { broadcast_document_row(:replace) }
     after_destroy_commit -> { broadcast_document_row(:remove) }
+
+    # Show-page header tracks the same status. Without this, the
+    # `embedding → complete` flip lands on the per-KB documents stream
+    # only — the show page subscribes to `turbo_stream_from @document`
+    # and would otherwise stay stuck at `embedding` even as the
+    # Embedding-driven header rebroadcasts ticked the X-of-Y counter to
+    # full. Re-render the header partial on the doc's own stream.
+    after_update_commit -> { broadcast_header_replace }
     # ---- /Broadcasts ----
 
     private
@@ -78,6 +86,13 @@ module Curator
                            target:  ActionView::RecordIdentifier.dom_id(kb, :card),
                            partial: "curator/knowledge_bases/card",
                            locals:  { kb: kb }
+    end
+
+    def broadcast_header_replace
+      broadcast_replace_to self,
+                           target:  ActionView::RecordIdentifier.dom_id(self, :header),
+                           partial: "curator/documents/header",
+                           locals:  { document: self }
     end
 
     def broadcast_document_row(action)

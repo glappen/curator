@@ -10,7 +10,12 @@
     against the single KB being re-rendered. %>
 <% docs_count    = local_assigns.fetch(:docs_count)    { kb.documents.count } %>
 <% last_ingested = local_assigns.fetch(:last_ingested) { kb.documents.maximum(:created_at) } %>
-<%= turbo_frame_tag dom_id(kb, :card), class: "card kb-card" do %>
+<%# `target: "_top"` so links inside the card (KB title, Edit) drive a
+    full-page navigation. Without it Turbo treats clicks as in-frame
+    requests and the documents index — which has no matching frame —
+    renders "Content missing." The frame still exists so KB and
+    Document broadcasts can replace it via `dom_id(kb, :card)`. %>
+<%= turbo_frame_tag dom_id(kb, :card), class: "card kb-card", target: "_top" do %>
   <h2 class="card__title">
     <%= link_to kb.name, "#{url.knowledge_base_path(kb)}/documents" %>
     <% if kb.is_default? %>

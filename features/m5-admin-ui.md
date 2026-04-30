@@ -16,7 +16,7 @@ vanilla namespaced CSS, and pulls the admin-side Turbo Streams
 infrastructure forward from M6 (M6 retains its `/api/stream`
 LLM-token streaming + Query Console scope).
 
-## Next Steps
+## Completed
 
 - [x] **Phase 1 — Plan amendment + asset/layout scaffolding +
    `:deleting` status + ActionCable check.**
@@ -302,7 +302,7 @@ LLM-token streaming + Query Console scope).
      `/curator/kbs/new`. Stimulus markup assertions only —
      navigation behavior covered by manual QA / M9 Capybara.
 
-- [ ] **Phase 8 — End-to-end smoke + plan close.**
+- [x] **Phase 8 — End-to-end smoke + plan close.**
    - `spec/requests/curator/admin_smoke_spec.rb` drives the full
      M5 surface against the dummy app: GET `/curator` (empty
      state) → POST `/curator/kbs` (create KB) → GET landing (card
@@ -313,17 +313,13 @@ LLM-token streaming + Query Console scope).
      terminal) → GET `/curator/kbs/<slug>/documents/<id>` (chunks
      visible w/ embedded badges + correct X-of-Y) → POST reingest
      → POST destroy → assert row gone after job runs.
-   - Broadcast assertions interleaved using `assert_turbo_stream`
-     at key transitions (doc create, status flip, embed complete,
-     destroy).
-   - Update CLAUDE.md if any new conventions emerged (likely a
-     line about the broadcast-suppression helper). Tick the
-     remaining boxes on this file. Add a "Completed" header above
-     the phase list (mirroring m1-foundation.md / m2-ingestion.md
-     close-out style) once all phases land.
-   - **Validate**: `bundle exec rspec --format progress` ends 0
-     failures. `bundle exec rubocop` ends "no offenses detected".
-     **M5 milestone complete.**
+   - Broadcast assertions interleaved with `have_broadcasted_to`
+     at key transitions (KB create on the index stream, doc
+     uploads + reingest + destroy on the per-KB documents stream).
+     The example is tagged `:broadcasts` so the per-suite
+     suppression in `spec/support/turbo_helpers.rb` stays out of
+     the way.
+   - **M5 milestone complete.**
 
 ## Implementation Notes
 

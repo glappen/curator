@@ -26,6 +26,26 @@ module Curator
       failed_chunk_count.positive?
     end
 
+    # Single query for the doc-show header's "X of Y embedded" line. The
+    # naive form was two COUNTs (`document.chunks.count` + an embeddings
+    # JOIN/COUNT), and that pair runs once per `Curator::Embedding`
+    # `after_create_commit` broadcast — so a 100-chunk ingest fired 200
+    # COUNTs. Postgres' `COUNT(*) FILTER (WHERE …)` collapses both into
+    # one scan + LEFT JOIN. `embedding_model` is parameterized via
+    # `sanitize_sql_array` even though all current call sites pass a
+    # KB-controlled value: cheap to do correctly.
+    def chunk_status_counts(embedding_model:)
+      filter_sql = ActiveRecord::Base.sanitize_sql_array([
+        "COUNT(*) FILTER (WHERE curator_embeddings.embedding_model = ?)",
+        embedding_model
+      ])
+      total, embedded = Curator::Chunk
+                          .where(document_id: id)
+                          .left_joins(:embedding)
+                          .pick(Arel.sql("COUNT(*)"), Arel.sql(filter_sql))
+      { total: total.to_i, embedded: embedded.to_i }
+    end
+
     # ---- Broadcasts (M5) ----
     # Phase 3 — KB index card refresh on doc create/update/destroy. The card
     # partial computes doc count + last-ingested-at, so any document change

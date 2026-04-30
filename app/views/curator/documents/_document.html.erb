@@ -30,7 +30,7 @@
   routes = Curator::Engine.routes.url_helpers
 %>
 <tr id="<%= dom_id(document) %>">
-  <td><%= document.title %></td>
+  <td><%= link_to document.title, routes.knowledge_base_document_path(document.knowledge_base, document) %></td>
   <td class="text-mono"><%= document.mime_type %></td>
   <td><%= number_to_human_size(document.byte_size) %></td>
   <td>

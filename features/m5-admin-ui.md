@@ -201,7 +201,7 @@ LLM-token streaming + Query Console scope).
      spawn one git worktree per phase, branched from the merged
      Round 1 tip. See "Parallelization" section below.
 
-- [ ] **Phase 4.5 — Document index pagination.** Phase 4 left
+- [x] **Phase 4.5 — Document index pagination.** Phase 4 left
    `DocumentsController#index` as an unbounded scope. Once Phase 6 lands
    `Curator::PaginationHelper`, the doc index should adopt the same
    `?page=N&per=25` (max 100) interface and the `_pagination` partial.
@@ -237,7 +237,7 @@ LLM-token streaming + Query Console scope).
      status flips back to `:pending`. Broadcast assertions on both
      paths.
 
-- [ ] **Phase 6 — Chunk inspector at `documents#show` + per-chunk
+- [x] **Phase 6 — Chunk inspector at `documents#show` + per-chunk
    embedding badges + live "X of Y embedded" header.**
    - `Curator::DocumentsController#show` route already implicit in
      `resources :documents`; controller `@document` + `@chunks =

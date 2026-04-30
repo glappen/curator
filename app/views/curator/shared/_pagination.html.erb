@@ -1,0 +1,28 @@
+<%# Renders prev/next + numbered page links for a `Curator::PaginationHelper::Page`.
+    Hidden entirely when there is only one page — single-page collections
+    don't need controls. `path_for` is a lambda from the caller that builds
+    a URL given a page number, so this partial stays agnostic about which
+    resource is being paginated. %>
+<% if page.pages > 1 %>
+  <nav class="pagination" aria-label="Pagination">
+    <% if page.page > 1 %>
+      <%= link_to "« Prev", path_for.call(page.page - 1), class: "pagination__link" %>
+    <% else %>
+      <span class="pagination__link pagination__link--disabled">« Prev</span>
+    <% end %>
+
+    <% (1..page.pages).each do |n| %>
+      <% if n == page.page %>
+        <span class="pagination__link pagination__link--current" aria-current="page"><%= n %></span>
+      <% else %>
+        <%= link_to n, path_for.call(n), class: "pagination__link" %>
+      <% end %>
+    <% end %>
+
+    <% if page.page < page.pages %>
+      <%= link_to "Next »", path_for.call(page.page + 1), class: "pagination__link" %>
+    <% else %>
+      <span class="pagination__link pagination__link--disabled">Next »</span>
+    <% end %>
+  </nav>
+<% end %>

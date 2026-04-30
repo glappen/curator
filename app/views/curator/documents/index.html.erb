@@ -35,4 +35,8 @@
       </tr>
     </tbody>
   </table>
+
+  <%= render "curator/shared/pagination",
+             page: @page,
+             path_for: ->(n) { knowledge_base_documents_path(@knowledge_base, page: n, per: @page.per) } %>
 </div>

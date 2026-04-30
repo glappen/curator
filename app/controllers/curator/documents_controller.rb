@@ -1,17 +1,41 @@
 module Curator
   class DocumentsController < ApplicationController
+    include Curator::PaginationHelper
+
     before_action :set_knowledge_base
 
     def index
-      @documents = @knowledge_base.documents
-                                  .where.not(status: :deleting)
-                                  .order(created_at: :desc)
+      scope     = @knowledge_base.documents
+                                 .where.not(status: :deleting)
+                                 .order(created_at: :desc)
+      @page     = paginate(scope, page: params[:page], per: params[:per])
+      @documents = @page.records
       # Single grouped aggregate keeps the row count constant in N. The
       # row partial falls back to `document.chunks.count` when this isn't
       # passed (the broadcast render path renders one row at a time).
       @chunk_counts = Chunk.where(document_id: @documents.pluck(:id))
                            .group(:document_id)
                            .count
+    end
+
+    def show
+      @document = @knowledge_base.documents.find(params[:id])
+      scope     = @document.chunks.order(:sequence)
+      @page     = paginate(scope, page: params[:page], per: params[:per])
+      @chunks   = @page.records
+      # Preload embeddings keyed by chunk_id so the per-chunk partial can
+      # render the badge + model + dim + embedded-at without an N+1. The
+      # KB's current `embedding_model` is the one we count as "embedded";
+      # rows with a stale model are treated as missing so a model swap
+      # surfaces as work-to-redo in the inspector. Explicit `select`
+      # excludes the `embedding` vector column — pulling N×1536 floats
+      # back just to render a model name + timestamp is ~600KB of
+      # wire/heap waste per show-page render at per=100.
+      chunk_ids = @chunks.map(&:id)
+      @embeddings_by_chunk_id = Embedding
+        .select(:id, :chunk_id, :embedding_model, :created_at)
+        .where(chunk_id: chunk_ids, embedding_model: @knowledge_base.embedding_model)
+        .index_by(&:chunk_id)
     end
 
     def create

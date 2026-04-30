@@ -1,0 +1,40 @@
+<%# Per-chunk card for the inspector. `embeddings_by_chunk_id` is preloaded
+    by the controller using the KB's *current* `embedding_model`; a chunk
+    whose only embedding is from a stale model still shows as "missing"
+    here so a re-embed is visibly required. %>
+<%
+  embedding = embeddings_by_chunk_id[chunk.id]
+  embedded  = embedding.present?
+  badge_class = embedded ? "badge--embedded" : "badge--missing"
+  badge_text  = embedded ? "embedded" : "missing"
+%>
+<article class="chunk-card" id="<%= dom_id(chunk) %>">
+  <header class="chunk-card__head">
+    <span class="chunk-card__rank">#<%= chunk.sequence %></span>
+    <span class="badge <%= badge_class %>"><%= badge_text %></span>
+  </header>
+
+  <p class="chunk-card__meta">
+    <% if chunk.page_number.present? %>
+      <span>page <%= chunk.page_number %></span>
+      <span class="chunk-card__sep">·</span>
+    <% end %>
+    <span><%= chunk.token_count %> tokens</span>
+    <span class="chunk-card__sep">·</span>
+    <span>chars <%= chunk.char_start %>&ndash;<%= chunk.char_end %></span>
+    <% if embedded %>
+      <span class="chunk-card__sep">·</span>
+      <span>
+        embedding:
+        <span class="text-mono"><%= embedding.embedding_model %></span>
+        (<%# Read dim from the schema, not the loaded vector — `.embedding.size`
+            deserializes the full N-float pgvector column per chunk just to
+            print a constant. %><%= Curator::Embedding.dimension %>d)
+      </span>
+      <span class="chunk-card__sep">·</span>
+      <span>embedded <%= embedding.created_at.to_fs(:short) %></span>
+    <% end %>
+  </p>
+
+  <pre class="chunk-card__body"><%= chunk.content %></pre>
+</article>

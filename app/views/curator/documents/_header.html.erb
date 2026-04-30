@@ -1,0 +1,58 @@
+<%# Renders the document show-page metadata header. Wrapped in a turbo-frame
+    so embedding create/destroy can replace it via broadcast — Curator::Embedding
+    after_*_commit callbacks target dom_id(document, :header). The X-of-Y
+    line is computed live from `Curator::Embedding` rows that match the KB's
+    *current* `embedding_model`; rows with a stale model count as missing
+    so a model swap surfaces work-to-redo. %>
+<%
+  badge_class = {
+    "pending"    => "badge--neutral",
+    "extracting" => "badge--warning",
+    "embedding"  => "badge--warning",
+    "complete"   => "badge--success",
+    "failed"     => "badge--danger",
+    "deleting"   => "badge--neutral"
+  }.fetch(document.status.to_s, "badge--neutral")
+
+  kb     = document.knowledge_base
+  counts = document.chunk_status_counts(embedding_model: kb.embedding_model)
+%>
+<%= turbo_frame_tag dom_id(document, :header), class: "document-header" do %>
+  <h1 class="document-header__title"><%= document.title %></h1>
+
+  <dl class="document-header__meta">
+    <div>
+      <dt>Type</dt>
+      <dd class="text-mono"><%= document.mime_type %></dd>
+    </div>
+    <div>
+      <dt>Size</dt>
+      <dd><%= number_to_human_size(document.byte_size) %></dd>
+    </div>
+    <div>
+      <dt>Status</dt>
+      <dd><span class="badge <%= badge_class %>"><%= document.status %></span></dd>
+    </div>
+    <div>
+      <dt>Chunks</dt>
+      <dd><%= counts[:total] %></dd>
+    </div>
+    <div>
+      <dt>Embedded</dt>
+      <dd><%= counts[:embedded] %> of <%= counts[:total] %></dd>
+    </div>
+    <div>
+      <dt>Ingested</dt>
+      <dd><%= document.created_at.to_fs(:short) %></dd>
+    </div>
+  </dl>
+
+  <% if document.failed? && document.stage_error.present? %>
+    <%# Phase 4 surfaced stage_error via the row badge tooltip; the show
+        page is the triage surface, so render it inline as a flash-style
+        block where operators can actually read and copy it. %>
+    <div class="flash flash--alert document-header__error">
+      <%= document.stage_error %>
+    </div>
+  <% end %>
+<% end %>

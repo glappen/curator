@@ -1,0 +1,32 @@
+<%= turbo_stream_from @document %>
+
+<div class="card">
+  <p class="card__meta">
+    <%= link_to "← Documents", knowledge_base_documents_path(@knowledge_base) %>
+  </p>
+
+  <%= render "header", document: @document %>
+
+  <% if @page.total.zero? %>
+    <p class="text-muted">No chunks yet — ingestion may still be in progress.</p>
+  <% else %>
+    <h2 class="document-show__chunks-heading">
+      Chunks
+      <span class="text-muted">
+        <%= @page.total %> total · showing
+        <%= (@page.page - 1) * @page.per + 1 %>&ndash;<%= [ (@page.page - 1) * @page.per + @chunks.size, @page.total ].min %>
+      </span>
+    </h2>
+
+    <div class="chunks-list">
+      <%= render partial: "chunk",
+                 collection: @chunks,
+                 as:         :chunk,
+                 locals:     { embeddings_by_chunk_id: @embeddings_by_chunk_id } %>
+    </div>
+
+    <%= render "curator/shared/pagination",
+               page: @page,
+               path_for: ->(n) { knowledge_base_document_path(@knowledge_base, @document, page: n, per: @page.per) } %>
+  <% end %>
+</div>

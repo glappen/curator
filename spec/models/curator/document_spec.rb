@@ -40,4 +40,48 @@ RSpec.describe Curator::Document, type: :model do
       expect(doc.file).to be_attached
     end
   end
+
+  describe "#chunk_status_counts" do
+    let(:kb)  { create(:curator_knowledge_base, embedding_model: "model-current") }
+    let(:doc) { create(:curator_document, knowledge_base: kb) }
+
+    it "returns total + embedded counts for the KB's current model" do
+      embedded_chunk = create(:curator_chunk, document: doc, sequence: 0)
+      _missing_chunk = create(:curator_chunk, document: doc, sequence: 1)
+      create(:curator_embedding, chunk: embedded_chunk, embedding_model: "model-current")
+
+      expect(doc.chunk_status_counts(embedding_model: "model-current"))
+        .to eq(total: 2, embedded: 1)
+    end
+
+    it "excludes embeddings from a stale model from the embedded count" do
+      chunk = create(:curator_chunk, document: doc, sequence: 0)
+      create(:curator_embedding, chunk: chunk, embedding_model: "model-old")
+
+      expect(doc.chunk_status_counts(embedding_model: "model-current"))
+        .to eq(total: 1, embedded: 0)
+    end
+
+    it "returns zeros for a chunkless document" do
+      expect(doc.chunk_status_counts(embedding_model: "model-current"))
+        .to eq(total: 0, embedded: 0)
+    end
+
+    # Locks in the COUNT(*) FILTER collapse — the naive form was two
+    # separate COUNTs and that pair fired on every Embedding broadcast.
+    it "issues exactly one query" do
+      create_list(:curator_chunk, 3, document: doc).each_with_index do |c, i|
+        create(:curator_embedding, chunk: c, embedding_model: "model-current") if i < 2
+      end
+
+      queries = []
+      callback = ->(_, _, _, _, payload) { queries << payload[:sql] if payload[:sql].is_a?(String) }
+      ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+        doc.chunk_status_counts(embedding_model: "model-current")
+      end
+      counting = queries.grep(/curator_chunks/i).grep(/count/i)
+      expect(counting.size).to eq(1),
+        "expected one COUNT query for chunk_status_counts, got #{counting.size}:\n#{counting.join("\n")}"
+    end
+  end
 end

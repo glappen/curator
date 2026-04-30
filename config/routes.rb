@@ -4,7 +4,7 @@ Curator::Engine.routes.draw do
   resources :knowledge_bases,
             path:   "kbs",
             param:  :slug do
-    resources :documents, only: %i[index create destroy] do
+    resources :documents, only: %i[index show create destroy] do
       member do
         post :reingest
       end

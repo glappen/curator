@@ -1,0 +1,79 @@
+module Curator
+  class DocumentsController < ApplicationController
+    before_action :set_knowledge_base
+
+    def index
+      @documents = @knowledge_base.documents
+                                  .where.not(status: :deleting)
+                                  .order(created_at: :desc)
+      # Single grouped aggregate keeps the row count constant in N. The
+      # row partial falls back to `document.chunks.count` when this isn't
+      # passed (the broadcast render path renders one row at a time).
+      @chunk_counts = Chunk.where(document_id: @documents.pluck(:id))
+                           .group(:document_id)
+                           .count
+    end
+
+    def create
+      files = Array(params[:files]).reject(&:blank?)
+
+      if files.empty?
+        redirect_to knowledge_base_documents_path(@knowledge_base),
+                    alert: "No files were selected."
+        return
+      end
+
+      counts = { created: 0, duplicate: 0, failed: 0 }
+      failures = []
+
+      files.each do |file|
+        result = ingest_one(file)
+        counts[result.status] += 1
+        failures << result.reason if result.failed? && result.reason
+      end
+
+      redirect_to knowledge_base_documents_path(@knowledge_base),
+                  notice: summary_flash(counts, failures)
+    end
+
+    private
+
+    def set_knowledge_base
+      @knowledge_base = KnowledgeBase.find_by!(slug: params[:knowledge_base_slug])
+    end
+
+    # Per-file rescue mirrors `Curator.ingest_directory`'s contract:
+    # known ingest failures (bad MIME, oversized blob, validation
+    # collision) are countable and the batch keeps going. Anything
+    # outside that surface (DB outage, OOM, programming error)
+    # propagates and aborts the request — those aren't "1 failed", they
+    # mean the upload form itself is broken.
+    def ingest_one(file)
+      Curator.ingest(file, knowledge_base: @knowledge_base)
+    rescue Curator::Error, ActiveRecord::RecordInvalid => e
+      IngestResult.new(
+        document: nil,
+        status:   :failed,
+        reason:   "#{e.class}: #{e.message}"
+      )
+    end
+
+    # Show up to two unique failure reasons in the flash. A 50-file batch
+    # with mixed errors (some oversize, some bad MIME) shouldn't collapse
+    # to a single misleading cause; a 50-file batch with the same error
+    # 50× shouldn't bloat the flash either.
+    FAILURE_REASONS_IN_FLASH = 2
+
+    def summary_flash(counts, failures)
+      parts = [
+        "#{counts[:created]} ingested",
+        "#{counts[:duplicate]} duplicate",
+        "#{counts[:failed]} failed"
+      ]
+      summary = parts.join(", ") + "."
+      return summary if failures.empty?
+
+      "#{summary} (#{failures.uniq.first(FAILURE_REASONS_IN_FLASH).join('; ')})"
+    end
+  end
+end

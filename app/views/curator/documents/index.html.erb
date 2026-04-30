@@ -1,0 +1,37 @@
+<%= turbo_stream_from @knowledge_base, "documents" %>
+
+<div class="card">
+  <h1><%= @knowledge_base.name %> &middot; <span class="text-muted">Documents</span></h1>
+  <p class="card__meta">
+    <%= link_to "Configuration", knowledge_base_path(@knowledge_base) %>
+  </p>
+
+  <%= render "upload_form", knowledge_base: @knowledge_base %>
+
+  <table class="table">
+    <thead>
+      <tr>
+        <th scope="col">Title</th>
+        <th scope="col">Type</th>
+        <th scope="col">Size</th>
+        <th scope="col">Status</th>
+        <th scope="col">Chunks</th>
+        <th scope="col">Ingested</th>
+      </tr>
+    </thead>
+    <tbody id="<%= dom_id(@knowledge_base, :documents) %>">
+      <%= render partial: "document",
+                 collection: @documents,
+                 as:         :document,
+                 locals:     { chunk_counts: @chunk_counts } %>
+      <%# Hidden via :has() once any non-empty-state row joins the tbody.
+          Lets the broadcast-driven append path coexist with the empty
+          state without a separate "remove empty-state" stream message. %>
+      <tr class="empty-state-row">
+        <td colspan="6" class="text-muted">
+          No documents yet. Upload one to get started.
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>

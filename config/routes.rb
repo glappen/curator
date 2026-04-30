@@ -4,7 +4,7 @@ Curator::Engine.routes.draw do
   resources :knowledge_bases,
             path:   "kbs",
             param:  :slug do
-    # Nested resources (Phase 4) and member routes (Phase 5)
-    # land inside this block.
+    resources :documents, only: %i[index create]
+    # Member routes for Phase 5 land inside `resources :documents`.
   end
 end

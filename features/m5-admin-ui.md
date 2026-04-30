@@ -161,7 +161,7 @@ LLM-token streaming + Query Console scope).
      `assert_broadcasts("curator_knowledge_bases_index", N)` around
      a doc create + KB create to confirm the wiring.
 
-- [ ] **Phase 4 — Document index + multipart multi-file upload +
+- [x] **Phase 4 — Document index + multipart multi-file upload +
    drag-drop + doc-list broadcasts.**
    - `Curator::DocumentsController#index` and `#create` under
      `kbs/:slug`. Index renders a table: filename, mime, byte size,
@@ -200,6 +200,12 @@ LLM-token streaming + Query Console scope).
      other phases are merged). Phases 5 ∥ 6 run in parallel —
      spawn one git worktree per phase, branched from the merged
      Round 1 tip. See "Parallelization" section below.
+
+- [ ] **Phase 4.5 — Document index pagination.** Phase 4 left
+   `DocumentsController#index` as an unbounded scope. Once Phase 6 lands
+   `Curator::PaginationHelper`, the doc index should adopt the same
+   `?page=N&per=25` (max 100) interface and the `_pagination` partial.
+   Cheap addition; defer to Phase 6 so the helper exists.
 
 - [ ] **Phase 5 — Async destroy (`DestroyDocumentJob`) + sync
    re-ingest + status broadcasts.**
@@ -242,6 +248,11 @@ LLM-token streaming + Query Console scope).
        `Curator::Embedding` rows where `embedding_model =
        kb.embedding_model`), ingested-at. Wrapped in
        `<turbo-frame id="curator_document_<id>_header">`.
+       When `status: :failed`, render `stage_error` (the captured
+       `"#{e.class}: #{e.message}"` from `IngestDocumentJob`) inline
+       below the header in a `.flash--alert`-style block. Phase 4's
+       row only surfaces it via the badge `title` tooltip — the
+       detail page is where operators actually triage failures.
      - Per-chunk cards: each rendered with metadata strip
        (`#<rank> · page N · M tokens · chars X–Y · embedding:
        <model> (<dim>d) · embedded <date>` or the missing-state

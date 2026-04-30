@@ -109,6 +109,21 @@ At that point we'll also start committing the dummy output — templates
 will have stabilized, diff churn goes away, and having a golden
 "freshly installed host app" in-repo has real review value.
 
+## Manually exercising the dummy host app
+
+`bin/rails s` (from `spec/dummy`) boots the dummy with the engine
+mounted at `/curator`. `spec/dummy/config/initializers/curator_dev.rb`
+ships a development-only override that wires `authenticate_admin_with`
++ `authenticate_api_with` to a permissive block and switches the
+extractor to `:basic`, so `/curator/*` is reachable without
+configuring real auth and `.md`/`.txt`/`.csv`/`.html` ingest works
+out of the box. The override is `Rails.env.development?`-guarded —
+test env is unaffected.
+
+`curator_dev.rb` is hand-written and committed; it survives
+`bin/reset-dummy` because reset-dummy only deletes the
+generator-owned files (`curator.rb`, `ruby_llm.rb`).
+
 ## Other development notes
 
 - Design docs in `features/` are living documents — update them when

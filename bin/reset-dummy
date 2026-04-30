@@ -15,6 +15,9 @@ ENGINE_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ENGINE_ROOT/spec/dummy"
 
 echo "--> Removing generated migrations, schema, initializers"
+# Generated files only. `curator_dev.rb` is hand-written and survives
+# resets; it carries the dev-mode auth bypass + :basic extractor so
+# `bin/rails s` reaches `/curator/*` without per-contributor setup.
 rm -rf db/schema.rb db/migrate
 rm -f config/initializers/curator.rb
 rm -f config/initializers/ruby_llm.rb

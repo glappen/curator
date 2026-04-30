@@ -1,0 +1,44 @@
+<%# Self-contained — no helper deps. Turbo Stream broadcasts render
+    this partial through `ApplicationController.render` (the *host's*
+    base controller, not the engine's), which doesn't carry the
+    engine's helper modules. Inlining the badge map keeps row-replace
+    broadcasts working from `Curator::Document.after_update_commit`. %>
+<%
+  badge_class = {
+    "pending"    => "badge--neutral",
+    "extracting" => "badge--warning",
+    "embedding"  => "badge--warning",
+    "complete"   => "badge--success",
+    "failed"     => "badge--danger",
+    "deleting"   => "badge--neutral"
+  }.fetch(document.status.to_s, "badge--neutral")
+
+  # `chunk_counts` is a `{ document_id => count }` hash preloaded by the
+  # index controller. The broadcast render path renders one row at a
+  # time without it; fall back to a single COUNT(*) for that doc.
+  chunk_count =
+    if (preloaded = local_assigns[:chunk_counts])
+      preloaded.fetch(document.id, 0)
+    else
+      document.chunks.count
+    end
+%>
+<tr id="<%= dom_id(document) %>">
+  <td><%= document.title %></td>
+  <td class="text-mono"><%= document.mime_type %></td>
+  <td><%= number_to_human_size(document.byte_size) %></td>
+  <td>
+    <span class="badge <%= badge_class %>"><%= document.status %></span>
+    <%# Stage error rendered inline rather than via `title` — native
+        tooltips have a ~700ms delay and a small hover target, so the
+        information was effectively invisible. Phase 6 will move this
+        to the doc-show header where it can be styled prominently. %>
+    <% if document.stage_error.present? %>
+      <div class="document-row__error" title="<%= document.stage_error %>">
+        <%= document.stage_error %>
+      </div>
+    <% end %>
+  </td>
+  <td><%= chunk_count %></td>
+  <td><%= document.created_at.to_fs(:short) %></td>
+</tr>

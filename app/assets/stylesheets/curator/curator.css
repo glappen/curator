@@ -506,3 +506,50 @@
   white-space: pre-wrap;
   margin: 0;
 }
+
+/* ---- Document upload form (Phase 4) ---- */
+.curator-ui .upload-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+.curator-ui .upload-form__dropzone {
+  border: 2px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  background: var(--color-surface-alt);
+  text-align: center;
+  transition: border-color 0.15s, background 0.15s;
+}
+.curator-ui .upload-form__dropzone.is-dragging {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+.curator-ui .upload-form__hint {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-muted);
+}
+.curator-ui .empty-state-row td {
+  text-align: center;
+  padding: var(--space-5);
+}
+/* Inline stage_error below the failed badge. Truncate at 1 line with
+   ellipsis; the full message stays in `title` for users who want it. */
+.curator-ui .document-row__error {
+  margin-top: var(--space-1);
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+  max-width: 32rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Hide the empty-state row whenever the tbody also contains a real
+   document row. Lets server-rendered rows + broadcast-appended rows
+   share one tbody without a separate stream message to tear down the
+   empty state on first append. */
+.curator-ui tbody:has(tr:not(.empty-state-row)) .empty-state-row {
+  display: none;
+}

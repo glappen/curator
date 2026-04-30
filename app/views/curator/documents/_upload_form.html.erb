@@ -1,0 +1,27 @@
+<%# Plain multipart form. Works without JS — the file <input> is itself
+    the control. The drag-drop Stimulus controller (loaded by host apps
+    that wire the engine's JS bundle) enhances UX with a drop overlay
+    that mirrors files into the input and submits the form. %>
+<%= form_with url:    knowledge_base_documents_path(knowledge_base),
+              method: :post,
+              multipart: true,
+              data:   { controller: "curator--drag-drop" },
+              class:  "upload-form" do |f| %>
+  <div class="upload-form__dropzone"
+       data-curator--drag-drop-target="dropzone"
+       data-action="dragenter->curator--drag-drop#dragEnter
+                    dragover->curator--drag-drop#dragOver
+                    dragleave->curator--drag-drop#dragLeave
+                    drop->curator--drag-drop#drop">
+    <p class="upload-form__hint">
+      Drag &amp; drop files here, or use the picker below.
+    </p>
+    <%= f.file_field :files,
+                     multiple: true,
+                     name: "files[]",
+                     data: { "curator--drag-drop-target": "input" } %>
+  </div>
+  <div class="form__actions">
+    <%= f.submit "Upload", class: "btn btn--primary" %>
+  </div>
+<% end %>

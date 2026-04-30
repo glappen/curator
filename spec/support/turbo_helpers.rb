@@ -57,7 +57,11 @@ RSpec.configure do |config|
   config.include Curator::TurboBroadcastHelpers
 
   config.before(:suite) do
-    Curator::Engine.eager_load!
+    # Rails::Engine#eager_load! is a no-op since Zeitwerk took over;
+    # the actual loader trigger is `Zeitwerk::Loader.eager_load_all`.
+    # Without this, AR descendants stays empty in `config.eager_load =
+    # false` test envs, and `compute_broadcasting_models` returns [].
+    Zeitwerk::Loader.eager_load_all
     Curator::TurboBroadcastHelpers.reset_cache!
   end
 

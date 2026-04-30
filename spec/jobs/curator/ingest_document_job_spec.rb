@@ -68,6 +68,18 @@ RSpec.describe Curator::IngestDocumentJob, type: :job do
     expect(Curator::EmbedChunksJob).to have_been_enqueued.with(document.id)
   end
 
+  it "tears down prior chunks before persisting new ones (reingest path)" do
+    # Simulate a reingest: doc already has chunks from a prior pass.
+    stale = create_list(:curator_chunk, 3, document: document)
+    document.update!(status: :pending)
+
+    described_class.perform_now(document.id)
+
+    expect(Curator::Chunk.where(id: stale.map(&:id))).to be_empty
+    expect(document.chunks.count).to be >= 1
+    expect(document.chunks.order(:sequence).pluck(:sequence)).to eq((0...document.chunks.count).to_a)
+  end
+
   it "writes chunk sequences contiguously starting at zero" do
     described_class.perform_now(document.id)
     sequences = document.chunks.order(:sequence).pluck(:sequence)

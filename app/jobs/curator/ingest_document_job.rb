@@ -42,6 +42,12 @@ module Curator
 
     def run_pipeline!(document)
       document.update!(status: :extracting, stage_error: nil)
+      # Idempotent cleanup: no-op for a fresh ingest, tears down the
+      # prior pass's chunks (and their cascade to embeddings + retrieval
+      # hits) on a reingest. Lives here rather than in `Curator.reingest`
+      # so a destroy_all of thousands of chunks never blocks the request
+      # handler that triggered the reingest.
+      document.chunks.destroy_all
 
       extraction = extract(document)
       chunks     = chunk(extraction, document.knowledge_base)

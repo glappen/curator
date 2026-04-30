@@ -17,6 +17,7 @@
         <th scope="col">Status</th>
         <th scope="col">Chunks</th>
         <th scope="col">Ingested</th>
+        <th scope="col">Actions</th>
       </tr>
     </thead>
     <tbody id="<%= dom_id(@knowledge_base, :documents) %>">
@@ -28,7 +29,7 @@
           Lets the broadcast-driven append path coexist with the empty
           state without a separate "remove empty-state" stream message. %>
       <tr class="empty-state-row">
-        <td colspan="6" class="text-muted">
+        <td colspan="7" class="text-muted">
           No documents yet. Upload one to get started.
         </td>
       </tr>

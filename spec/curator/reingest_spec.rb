@@ -11,15 +11,20 @@ RSpec.describe Curator, ".reingest" do
     create(:curator_chunk, document: document, sequence: 1)
   end
 
-  it "destroys existing chunks, resets the document to :pending, and re-enqueues IngestDocumentJob" do
-    expect {
-      Curator.reingest(document)
-    }.to change { document.chunks.count }.from(2).to(0)
+  it "resets the document to :pending and re-enqueues IngestDocumentJob" do
+    Curator.reingest(document)
 
     document.reload
     expect(document.status).to eq("pending")
     expect(document.stage_error).to be_nil
     expect(Curator::IngestDocumentJob).to have_been_enqueued.with(document.id)
+  end
+
+  it "leaves prior chunks in place — teardown happens inside IngestDocumentJob, " \
+     "not here, so the request handler stays cheap" do
+    expect {
+      Curator.reingest(document)
+    }.not_to change { document.chunks.count }
   end
 
   it "clears a prior stage_error" do
@@ -31,7 +36,7 @@ RSpec.describe Curator, ".reingest" do
     expect(document.status).to eq("pending")
   end
 
-  it "does not enqueue when the destroy/reset transaction rolls back" do
+  it "does not enqueue when the status flip raises" do
     allow(document).to receive(:update!).and_raise(ActiveRecord::RecordInvalid.new(document))
 
     expect {
@@ -39,8 +44,6 @@ RSpec.describe Curator, ".reingest" do
     }.to raise_error(ActiveRecord::RecordInvalid)
 
     expect(Curator::IngestDocumentJob).not_to have_been_enqueued
-    # Chunks survive because the destroy_all happened in the same transaction.
-    expect(document.chunks.count).to eq(2)
   end
 
   it "returns the document so callers can chain" do

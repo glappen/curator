@@ -195,24 +195,22 @@ module Curator
 
     # Re-run extraction + chunking for an existing document. Uses the
     # blob already attached to the document; no re-hash, no re-fetch.
-    # The chunks (and any embeddings via DB cascade in M3+) are deleted
-    # transactionally before the doc flips back to :pending and the job
-    # is re-enqueued.
+    # The doc flips back to :pending and the job re-enqueues; the prior
+    # chunks (and their cascade to embeddings/retrievals) are torn down
+    # inside IngestDocumentJob#run_pipeline!, not here, so reingest stays
+    # cheap to call from a request handler.
     def reingest(document)
-      ActiveRecord::Base.transaction do
-        # Reload first: callers may hold a stale `document` reference whose
-        # in-memory status hasn't caught up with what the IngestDocumentJob
-        # / EmbedChunksJob wrote (a fresh-from-create document will still
-        # have status=:pending in memory after the pipeline has flipped it
-        # to :complete in the DB). AR's dirty-tracking on update! compares
-        # against the in-memory snapshot, not the DB row, so without this
-        # `update!(status: :pending, ...)` is a no-op when the in-memory
-        # status already happens to be :pending — the destroy_all would
-        # land but the document would never get re-enqueued.
-        document.reload
-        document.chunks.destroy_all
-        document.update!(status: :pending, stage_error: nil)
-      end
+      # Reload first: callers may hold a stale `document` reference whose
+      # in-memory status hasn't caught up with what the IngestDocumentJob
+      # / EmbedChunksJob wrote (a fresh-from-create document will still
+      # have status=:pending in memory after the pipeline has flipped it
+      # to :complete in the DB). AR's dirty-tracking on update! compares
+      # against the in-memory snapshot, not the DB row, so without this
+      # `update!(status: :pending, ...)` is a no-op when the in-memory
+      # status already happens to be :pending — the document would never
+      # get re-enqueued.
+      document.reload
+      document.update!(status: :pending, stage_error: nil)
       IngestDocumentJob.perform_later(document.id)
       document
     end

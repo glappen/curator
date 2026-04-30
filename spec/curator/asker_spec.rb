@@ -212,12 +212,17 @@ RSpec.describe "Curator.ask" do
       end
     end
 
-    it "survives Curator.reingest of the source document (chunk_id nil, snapshot intact)" do
+    it "survives chunk teardown during reingest (chunk_id nil, snapshot intact)" do
       live = Curator.ask("alpha beta gamma", knowledge_base: kb)
       hit_row = Curator::Retrieval.find(live.retrieval_id).retrieval_hits.order(:rank).first
       expect(hit_row.chunk_id).to eq(chunk.id)
 
-      Curator.reingest(chunk.document)
+      # Reingest's chunk teardown lives inside IngestDocumentJob#run_pipeline!
+      # (M5 Phase 5). Drive the FK nullify path directly here rather than
+      # spinning up the whole job + extractor stub — the assertion is about
+      # `curator_retrieval_hits.chunk_id ON DELETE SET NULL`, not the
+      # reingest control flow.
+      chunk.document.chunks.destroy_all
 
       hit_row.reload
       expect(hit_row.chunk_id).to    be_nil

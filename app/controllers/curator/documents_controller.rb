@@ -36,6 +36,41 @@ module Curator
                   notice: summary_flash(counts, failures)
     end
 
+    # Async delete: a single doc with thousands of chunks/embeddings can
+    # take seconds to cascade. Flip the row to :deleting (index scope
+    # already hides it) so the operator sees the row vanish on the next
+    # render, then hand off to DestroyDocumentJob.
+    #
+    # Transaction wraps the status flip + enqueue so a queue-adapter
+    # failure rolls the row back instead of stranding it in :deleting.
+    # Solid Queue (the v1 default) is DB-backed, so its enqueue is part
+    # of the same transaction and rolls back too. Out-of-band adapters
+    # like Sidekiq enqueue immediately on `perform_later`, so a rolled-
+    # back transaction would leave a zombie job — but the job's
+    # `find_by(id:)` short-circuits cleanly in that case.
+    def destroy
+      document = @knowledge_base.documents.find(params[:id])
+      ActiveRecord::Base.transaction do
+        document.update!(status: :deleting)
+        DestroyDocumentJob.perform_later(document.id)
+      end
+
+      redirect_to knowledge_base_documents_path(@knowledge_base),
+                  notice: "Document queued for deletion."
+    end
+
+    # Re-ingest: flip status back to :pending and enqueue. The chunk
+    # teardown happens inside IngestDocumentJob (see #run_pipeline!) so
+    # this stays cheap — a single UPDATE + enqueue. Subsequent job-side
+    # status writes broadcast on the per-KB stream automatically.
+    def reingest
+      document = @knowledge_base.documents.find(params[:id])
+      Curator.reingest(document)
+
+      redirect_to knowledge_base_documents_path(@knowledge_base),
+                  notice: "Re-ingesting \"#{document.title}\"."
+    end
+
     private
 
     def set_knowledge_base

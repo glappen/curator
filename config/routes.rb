@@ -4,7 +4,10 @@ Curator::Engine.routes.draw do
   resources :knowledge_bases,
             path:   "kbs",
             param:  :slug do
-    resources :documents, only: %i[index create]
-    # Member routes for Phase 5 land inside `resources :documents`.
+    resources :documents, only: %i[index create destroy] do
+      member do
+        post :reingest
+      end
+    end
   end
 end

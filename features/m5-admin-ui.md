@@ -207,7 +207,7 @@ LLM-token streaming + Query Console scope).
    `?page=N&per=25` (max 100) interface and the `_pagination` partial.
    Cheap addition; defer to Phase 6 so the helper exists.
 
-- [ ] **Phase 5 — Async destroy (`DestroyDocumentJob`) + sync
+- [x] **Phase 5 — Async destroy (`DestroyDocumentJob`) + sync
    re-ingest + status broadcasts.**
    - `app/jobs/curator/destroy_document_job.rb`: takes a document
      id, calls `document.destroy!` inside a transaction. Cascade

@@ -353,14 +353,16 @@ RSpec.describe "curator rake tasks" do
       expect { silently { task.invoke } }.to raise_error(SystemExit)
     end
 
-    it "deletes existing chunks, resets the document, and re-enqueues the job" do
+    it "resets the document and re-enqueues the job" do
       ENV["DOCUMENT"] = document.id.to_s
 
       out, _err = silently { task.invoke }
 
       expect(out).to include("Re-enqueued ingest for document=#{document.id}")
       expect(document.reload.status).to eq("pending")
-      expect(document.chunks).to be_empty
+      # Chunk teardown is the job's responsibility now (Phase 5 moved it
+      # out of `Curator.reingest` into `IngestDocumentJob#run_pipeline!`),
+      # so it's covered there — not asserted here.
       expect(Curator::IngestDocumentJob).to have_been_enqueued.with(document.id)
     end
 

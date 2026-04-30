@@ -1,6 +1,8 @@
 require "rails_helper"
 
 RSpec.describe "Curator::Documents", type: :request do
+  include ActiveJob::TestHelper
+
   let(:knowledge_base) do
     create(:curator_knowledge_base, slug: "kb-docs", name: "KB Docs")
   end
@@ -22,6 +24,11 @@ RSpec.describe "Curator::Documents", type: :request do
       expect(body).to include('data-curator--drag-drop-target="input"')
       expect(body).to include('name="files[]"')
       expect(body).to include(doc.title)
+      # Row actions render with the project's `.btn` design-system classes,
+      # not Bootstrap-style `.button`. Locks against future class drift —
+      # mismatched names would render unstyled buttons in the admin UI.
+      expect(body).to match(/class="btn"[^>]*>\s*Re-ingest/)
+      expect(body).to match(/class="btn btn--danger"[^>]*>\s*Delete/)
     end
 
     it "hides documents in the :deleting status" do
@@ -156,6 +163,105 @@ RSpec.describe "Curator::Documents", type: :request do
       expect(response).to redirect_to("/curator/kbs/kb-docs/documents")
       follow_redirect!
       expect(response.body).to include("No files were selected.")
+    end
+  end
+
+  describe "DELETE /curator/kbs/:slug/documents/:id" do
+    it "flips status to :deleting, enqueues DestroyDocumentJob, and redirects" do
+      doc = create(:curator_document, knowledge_base: knowledge_base, status: :complete)
+
+      expect {
+        delete "/curator/kbs/kb-docs/documents/#{doc.id}"
+      }.to have_enqueued_job(Curator::DestroyDocumentJob).with(doc.id)
+
+      expect(doc.reload.status).to eq("deleting")
+      expect(response).to redirect_to("/curator/kbs/kb-docs/documents")
+      follow_redirect!
+      expect(response.body).to include("Document queued for deletion.")
+    end
+
+    it "removes the row from the database after the job runs" do
+      doc = create(:curator_document, knowledge_base: knowledge_base, status: :complete)
+
+      perform_enqueued_jobs do
+        delete "/curator/kbs/kb-docs/documents/#{doc.id}"
+      end
+
+      expect(Curator::Document.find_by(id: doc.id)).to be_nil
+    end
+
+    it "404s on an unknown document id" do
+      delete "/curator/kbs/kb-docs/documents/999999"
+      expect(response).to have_http_status(:not_found)
+    end
+  end
+
+  describe "POST /curator/kbs/:slug/documents/:id/reingest" do
+    it "calls Curator.reingest with the document and flips status back to :pending" do
+      doc = create(:curator_document, knowledge_base: knowledge_base, status: :complete)
+      # Match by id (not by AR identity) — the controller looks the doc up
+      # fresh, so the instance Curator.reingest receives is a different
+      # object from `doc`.
+      expect(Curator).to receive(:reingest)
+        .with(have_attributes(id: doc.id))
+        .and_call_original
+
+      post "/curator/kbs/kb-docs/documents/#{doc.id}/reingest"
+
+      expect(doc.reload.status).to eq("pending")
+      expect(response).to redirect_to("/curator/kbs/kb-docs/documents")
+      follow_redirect!
+      expect(response.body).to include("Re-ingesting")
+    end
+
+    it "404s on an unknown document id" do
+      post "/curator/kbs/kb-docs/documents/999999/reingest"
+      expect(response).to have_http_status(:not_found)
+    end
+  end
+
+  describe "broadcasts on destroy + reingest", :broadcasts do
+    let(:stream) do
+      Turbo::StreamsChannel.send(:stream_name_from, [ knowledge_base, "documents" ])
+    end
+
+    it "broadcasts the row replace when destroy flips status to :deleting" do
+      doc = create(:curator_document, knowledge_base: knowledge_base, status: :complete)
+
+      expect {
+        delete "/curator/kbs/kb-docs/documents/#{doc.id}"
+      }.to have_broadcasted_to(stream)
+    end
+
+    it "broadcasts the row remove after the destroy job runs" do
+      doc = create(:curator_document, knowledge_base: knowledge_base, status: :complete)
+
+      # Two messages: the controller's :deleting flip (replace) and the
+      # job's `destroy!` (remove). The remove is the load-bearing one
+      # for any other connected client to see the row vanish.
+      #
+      # Sequencing matters: `perform_enqueued_jobs` is called *outside*
+      # the request, not as a block-form wrapper. The block form sets
+      # `perform_enqueued_jobs = true` on the test adapter, which causes
+      # `perform_later` to inline the job — and since the controller now
+      # wraps `update!(:deleting)` + `perform_later` in a transaction,
+      # the inlined `destroy!` would run *before* the transaction commits
+      # and would suppress the :deleting flip's `after_update_commit`
+      # broadcast. Calling `perform_enqueued_jobs` after the request
+      # gets the production sequencing: request transaction commits
+      # (replace fires), then the job runs (remove fires).
+      expect {
+        delete "/curator/kbs/kb-docs/documents/#{doc.id}"
+        perform_enqueued_jobs
+      }.to have_broadcasted_to(stream).twice
+    end
+
+    it "broadcasts the row replace on reingest's status flip" do
+      doc = create(:curator_document, knowledge_base: knowledge_base, status: :complete)
+
+      expect {
+        post "/curator/kbs/kb-docs/documents/#{doc.id}/reingest"
+      }.to have_broadcasted_to(stream)
     end
   end
 

@@ -22,6 +22,12 @@
     else
       document.chunks.count
     end
+
+  # Same render-context trap as the badge map above: turbo broadcasts go
+  # through the host's ApplicationController, which doesn't carry the
+  # engine's url helpers. Reach for them on the Engine directly so row
+  # replaces from `after_update_commit` keep rendering.
+  routes = Curator::Engine.routes.url_helpers
 %>
 <tr id="<%= dom_id(document) %>">
   <td><%= document.title %></td>
@@ -41,4 +47,16 @@
   </td>
   <td><%= chunk_count %></td>
   <td><%= document.created_at.to_fs(:short) %></td>
+  <td class="document-row__actions">
+    <%= button_to "Re-ingest",
+                  routes.reingest_knowledge_base_document_path(document.knowledge_base, document),
+                  method: :post,
+                  class:  "btn",
+                  form:   { data: { turbo_confirm: "Re-ingest \"#{document.title}\"? This rebuilds all chunks and embeddings." } } %>
+    <%= button_to "Delete",
+                  routes.knowledge_base_document_path(document.knowledge_base, document),
+                  method: :delete,
+                  class:  "btn btn--danger",
+                  form:   { data: { turbo_confirm: "Delete \"#{document.title}\"? This removes all chunks, embeddings, and retrieval history." } } %>
+  </td>
 </tr>

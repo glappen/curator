@@ -132,7 +132,7 @@ LLM-token streaming + Query Console scope).
      from this commit. See "Parallelization" section below for
      per-phase file lists and merge-conflict watch points.
 
-- [ ] **Phase 3 — Landing page (KB list cards) + empty state +
+- [x] **Phase 3 — Landing page (KB list cards) + empty state +
    KB-list broadcasts.**
    - `Curator::KnowledgeBasesController#index` mounted at
      `root "knowledge_bases#index"`. View renders one card per KB:

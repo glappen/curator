@@ -18,12 +18,14 @@ module Curator
 
       attr_reader :query, :knowledge_base, :strategy, :limit, :threshold
 
+      def self.call(retrieval_row = nil, **kwargs) = new(**kwargs).call(retrieval_row)
+
       def initialize(query:, knowledge_base: nil, limit: nil, threshold: nil, strategy: nil)
         @query = query
         validate_query!
         validate_strategy!(strategy)
 
-        @knowledge_base = resolve_kb(knowledge_base)
+        @knowledge_base = KnowledgeBase.resolve(knowledge_base)
         @strategy       = (strategy || @knowledge_base.retrieval_strategy).to_sym
         @limit          = limit || @knowledge_base.chunk_limit
         validate_threshold_keyword_pairing!(threshold)
@@ -56,18 +58,6 @@ module Curator
         return if STRATEGIES.include?(strategy_override.to_sym)
         raise ArgumentError,
               "strategy must be one of #{STRATEGIES.inspect} (got #{strategy_override.inspect})"
-      end
-
-      def resolve_kb(kb_arg)
-        case kb_arg
-        when nil            then KnowledgeBase.default!
-        when KnowledgeBase  then kb_arg
-        when String, Symbol then KnowledgeBase.find_by!(slug: kb_arg.to_s)
-        else
-          raise ArgumentError,
-                "knowledge_base: must be a Curator::KnowledgeBase, String, or " \
-                "Symbol slug (got #{kb_arg.class})"
-        end
       end
 
       def validate_threshold_keyword_pairing!(threshold_override)

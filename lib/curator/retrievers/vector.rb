@@ -21,7 +21,7 @@ module Curator
           .map     { |emb| [ emb, cosine_similarity(emb) ] }
           .reject  { |_, score| threshold && score < threshold }
           .each_with_index
-          .map     { |(emb, score), idx| build_hit(emb, score, idx + 1) }
+          .map     { |(emb, score), idx| Curator::Hit.from_chunk(emb.chunk, rank: idx + 1, score: score) }
       end
 
       private
@@ -34,21 +34,6 @@ module Curator
       # happen, and `Hit#score` already documents the range.
       def cosine_similarity(embedding)
         1.0 - embedding.neighbor_distance.to_f
-      end
-
-      def build_hit(embedding, score, rank)
-        chunk    = embedding.chunk
-        document = chunk.document
-        Curator::Hit.new(
-          rank:          rank,
-          chunk_id:      chunk.id,
-          document_id:   document.id,
-          document_name: document.title,
-          page_number:   chunk.page_number,
-          text:          chunk.content,
-          score:         score,
-          source_url:    document.source_url
-        )
       end
     end
   end

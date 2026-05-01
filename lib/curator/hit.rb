@@ -15,5 +15,23 @@ module Curator
     :text,
     :score,
     :source_url
-  )
+  ) do
+    # Build a Hit from a chunk + its document, snapshotting the fields
+    # the prompt assembler and admin UI need. `score` is the strategy's
+    # native score (cosine for vector, nil for keyword-only); `rank` is
+    # 1-indexed and matches the `[N]` citation marker.
+    def self.from_chunk(chunk, rank:, score:)
+      document = chunk.document
+      new(
+        rank:          rank,
+        chunk_id:      chunk.id,
+        document_id:   document.id,
+        document_name: document.title,
+        page_number:   chunk.page_number,
+        text:          chunk.content,
+        score:         score,
+        source_url:    document.source_url
+      )
+    end
+  end
 end

@@ -1,5 +1,17 @@
 module Curator
   class KnowledgeBasesController < ApplicationController
+    # Strong-params permit list, partitioned by form action. `embedding_model`
+    # and `slug` are creation-time-only — `update` permits the editable subset
+    # so a hand-crafted POST can't bypass the `disabled` form attributes and
+    # corrupt embeddings or break URLs.
+    EDITABLE_PARAMS = %i[
+      name description is_default
+      retrieval_strategy chunk_limit similarity_threshold
+      tsvector_config include_citations strict_grounding
+      chunk_size chunk_overlap chat_model system_prompt
+    ].freeze
+    LOCKED_PARAMS = %i[embedding_model slug].freeze
+
     before_action :set_knowledge_base, only: %i[show edit update destroy]
 
     def index
@@ -58,13 +70,19 @@ module Curator
     end
 
     def create_params
-      params.require(:knowledge_base)
-            .permit(KnowledgeBase.permitted_params(action: :create))
+      params.require(:knowledge_base).permit(permitted_params(action: :create))
     end
 
     def update_params
-      params.require(:knowledge_base)
-            .permit(KnowledgeBase.permitted_params(action: :update))
+      params.require(:knowledge_base).permit(permitted_params(action: :update))
+    end
+
+    def permitted_params(action:)
+      case action.to_sym
+      when :new, :create then EDITABLE_PARAMS + LOCKED_PARAMS
+      when :edit, :update then EDITABLE_PARAMS
+      else raise ArgumentError, "unknown action: #{action.inspect}"
+      end
     end
   end
 end

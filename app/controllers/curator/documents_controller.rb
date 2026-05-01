@@ -40,24 +40,15 @@ module Curator
 
     def create
       files = Array(params[:files]).reject(&:blank?)
-
       if files.empty?
         redirect_to knowledge_base_documents_path(@knowledge_base),
                     alert: "No files were selected."
         return
       end
 
-      counts = { created: 0, duplicate: 0, failed: 0 }
-      failures = []
-
-      files.each do |file|
-        result = ingest_one(file)
-        counts[result.status] += 1
-        failures << result.reason if result.failed? && result.reason
-      end
-
+      result = Documents::IngestBatch.call(kb: @knowledge_base, files: files)
       redirect_to knowledge_base_documents_path(@knowledge_base),
-                  notice: summary_flash(counts, failures)
+                  notice: summary_flash(result.counts, result.failures)
     end
 
     # Async delete: a single doc with thousands of chunks/embeddings can
@@ -99,22 +90,6 @@ module Curator
 
     def set_knowledge_base
       @knowledge_base = KnowledgeBase.find_by!(slug: params[:knowledge_base_slug])
-    end
-
-    # Per-file rescue mirrors `Curator.ingest_directory`'s contract:
-    # known ingest failures (bad MIME, oversized blob, validation
-    # collision) are countable and the batch keeps going. Anything
-    # outside that surface (DB outage, OOM, programming error)
-    # propagates and aborts the request — those aren't "1 failed", they
-    # mean the upload form itself is broken.
-    def ingest_one(file)
-      Curator.ingest(file, knowledge_base: @knowledge_base)
-    rescue Curator::Error, ActiveRecord::RecordInvalid => e
-      IngestResult.new(
-        document: nil,
-        status:   :failed,
-        reason:   "#{e.class}: #{e.message}"
-      )
     end
 
     # Show up to two unique failure reasons in the flash. A 50-file batch

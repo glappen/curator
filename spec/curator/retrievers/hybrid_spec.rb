@@ -1,10 +1,18 @@
 require "rails_helper"
 
 RSpec.describe Curator::Retrievers::Hybrid do
-  subject(:strategy) { described_class.new }
-
   let(:kb)       { create(:curator_knowledge_base, tsvector_config: "english") }
   let(:document) { create(:curator_document, knowledge_base: kb) }
+
+  # Mirrors Pipeline#run_hybrid: run Vector + Keyword and fuse them.
+  # The spec previously called a Hybrid#call that did the same; the
+  # fusion-only Hybrid module exposes only `.fuse`.
+  def strategy_call(kb, query, query_vec, limit:, threshold:)
+    return [] if limit <= 0
+    vector_hits  = Curator::Retrievers::Vector.new.call(kb, query_vec, limit: limit, threshold: threshold)
+    keyword_hits = Curator::Retrievers::Keyword.new.call(kb, query, limit: limit)
+    described_class.fuse(vector_hits, keyword_hits, limit: limit)
+  end
 
   def make_chunk(content:, sequence:, embed_for: nil, status: :embedded, page_number: nil, doc: document)
     chunk = create(:curator_chunk,
@@ -40,7 +48,7 @@ RSpec.describe Curator::Retrievers::Hybrid do
       kw_only  = make_chunk(content: "alpha alpha",
                             sequence: 2, embed_for: "epsilon zeta theta")
 
-      hits = strategy.call(kb, "alpha", query_vec("alpha gamma"), limit: 5, threshold: 0.0)
+      hits = strategy_call(kb, "alpha", query_vec("alpha gamma"), limit: 5, threshold: 0.0)
 
       expect(hits.first.chunk_id).to eq(dual.id)
       expect(hits.map(&:chunk_id)).to include(vec_only.id, kw_only.id)
@@ -57,8 +65,8 @@ RSpec.describe Curator::Retrievers::Hybrid do
       _filler = make_chunk(content: "yet other words here", sequence: 1,
                            embed_for: "different unrelated y")
 
-      vec_lo = strategy.call(kb, "alpha", query_vec("alpha"), limit: 5, threshold: 0.0).map(&:chunk_id)
-      vec_hi = strategy.call(kb, "alpha", query_vec("alpha"), limit: 5, threshold: 0.99).map(&:chunk_id)
+      vec_lo = strategy_call(kb, "alpha", query_vec("alpha"), limit: 5, threshold: 0.0).map(&:chunk_id)
+      vec_hi = strategy_call(kb, "alpha", query_vec("alpha"), limit: 5, threshold: 0.99).map(&:chunk_id)
 
       expect(vec_hi).to eq([ kw_only.id ])
       expect(vec_lo).to include(kw_only.id)
@@ -76,7 +84,7 @@ RSpec.describe Curator::Retrievers::Hybrid do
       kw_only = make_chunk(content: "alpha alpha", sequence: 1,
                            embed_for: "totally unrelated tokens z")
 
-      hits     = strategy.call(kb, "alpha", query_vec("alpha"), limit: 5, threshold: 0.5)
+      hits     = strategy_call(kb, "alpha", query_vec("alpha"), limit: 5, threshold: 0.5)
       hit_for  = ->(id) { hits.find { |h| h.chunk_id == id } }
 
       expect(hit_for[dual.id].score).to    be_a(Float)
@@ -87,17 +95,17 @@ RSpec.describe Curator::Retrievers::Hybrid do
 
   describe "edge cases" do
     it "returns an empty array when both halves are empty" do
-      expect(strategy.call(kb, "zzzzzzz", query_vec("nothing"), limit: 5, threshold: 0.99)).to eq([])
+      expect(strategy_call(kb, "zzzzzzz", query_vec("nothing"), limit: 5, threshold: 0.99)).to eq([])
     end
 
     it "returns an empty array on non-positive limit" do
       make_chunk(content: "alpha", sequence: 0, embed_for: "alpha")
-      expect(strategy.call(kb, "alpha", query_vec("alpha"), limit: 0, threshold: 0.0)).to eq([])
+      expect(strategy_call(kb, "alpha", query_vec("alpha"), limit: 0, threshold: 0.0)).to eq([])
     end
 
     it "honors limit on the fused output" do
       5.times { |i| make_chunk(content: "alpha word#{i}", sequence: i, embed_for: "alpha word#{i}") }
-      hits = strategy.call(kb, "alpha", query_vec("alpha"), limit: 3, threshold: 0.0)
+      hits = strategy_call(kb, "alpha", query_vec("alpha"), limit: 3, threshold: 0.0)
       expect(hits.size).to eq(3)
       expect(hits.map(&:rank)).to eq([ 1, 2, 3 ])
     end
@@ -106,7 +114,7 @@ RSpec.describe Curator::Retrievers::Hybrid do
       document.update!(title: "Alpha Memo", source_url: "https://example.com/a")
       chunk = make_chunk(content: "alpha beta", sequence: 0, page_number: 9, embed_for: "alpha beta")
 
-      hit = strategy.call(kb, "alpha", query_vec("alpha beta"), limit: 5, threshold: 0.0).first
+      hit = strategy_call(kb, "alpha", query_vec("alpha beta"), limit: 5, threshold: 0.0).first
 
       expect(hit.chunk_id).to      eq(chunk.id)
       expect(hit.document_id).to   eq(document.id)

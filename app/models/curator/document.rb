@@ -18,6 +18,24 @@ module Curator
     validates :mime_type,    presence: true
     validates :byte_size,    numericality: { only_integer: true, greater_than_or_equal_to: 0 }
 
+    BADGE_CLASS_BY_STATUS = {
+      "pending"    => "badge--neutral",
+      "extracting" => "badge--warning",
+      "embedding"  => "badge--warning",
+      "complete"   => "badge--success",
+      "failed"     => "badge--danger",
+      "deleting"   => "badge--neutral"
+    }.freeze
+    private_constant :BADGE_CLASS_BY_STATUS
+
+    # CSS modifier for the status badge. Lives on the model rather than
+    # in a helper so the partial can render under
+    # `ApplicationController.render` (the Turbo broadcast path), which
+    # doesn't carry the engine's helper modules.
+    def status_badge_class
+      BADGE_CLASS_BY_STATUS.fetch(status.to_s, "badge--neutral")
+    end
+
     def failed_chunk_count
       chunks.where(status: :failed).count
     end

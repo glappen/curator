@@ -23,5 +23,44 @@ module Curator
     def to_answer
       Curator::Answer.from_retrieval(self)
     end
+
+    # Open a new retrieval row that snapshots the effective config from
+    # `pipeline` plus its KB. Returns nil when query logging is disabled,
+    # so callers don't need to guard `Curator.config.log_queries`. The
+    # `chat_extras` keyword splat carries chat-flavored snapshot columns
+    # (strict_grounding, include_citations, chat_id) that the ask path
+    # populates from the start so an early failure still records intent.
+    def self.open_for(pipeline:, chat_model: nil, **chat_extras)
+      return nil unless Curator.config.log_queries
+      kb = pipeline.knowledge_base
+
+      create!(
+        knowledge_base:       kb,
+        query:                pipeline.query,
+        chat_model:           chat_model || kb.chat_model,
+        embedding_model:      kb.embedding_model,
+        retrieval_strategy:   pipeline.strategy.to_s,
+        similarity_threshold: pipeline.threshold,
+        chunk_limit:          pipeline.limit,
+        **chat_extras
+      )
+    end
+
+    def mark_failed!(error, started_at:)
+      update!(
+        status:            :failed,
+        error_message:     "#{error.class}: #{error.message}",
+        total_duration_ms: ((Time.current - started_at) * 1000).to_i
+      )
+    end
+
+    def mark_success!(started_at:, **extras)
+      update!(
+        extras.merge(
+          status:            :success,
+          total_duration_ms: ((Time.current - started_at) * 1000).to_i
+        )
+      )
+    end
   end
 end

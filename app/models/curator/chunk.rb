@@ -18,17 +18,23 @@ module Curator
 
     after_save :refresh_content_tsvector, if: :saved_change_to_content?
 
+    # Bulk-rewrites `content_tsvector` for the given chunk ids using
+    # `config` as the Postgres regconfig. Bypasses callbacks (raw SQL via
+    # update_all) so it's safe to call from a row's after_save hook
+    # without recursion. Used by both the per-chunk refresh callback and
+    # the `:all` reembed scope that re-stems every chunk after a KB's
+    # tsvector_config flip.
+    def self.refresh_tsvector!(ids:, config:)
+      where(id: ids).update_all([
+        "content_tsvector = to_tsvector(?::regconfig, content)",
+        config
+      ])
+    end
+
     private
 
-    # Computes content_tsvector via the parent KB's tsvector_config and
-    # writes it back via update_all so callbacks don't recurse. Note:
-    # changing a KB's tsvector_config does NOT refresh existing chunks —
-    # trigger a `:all` reembed (Phase 6) to rewrite their tsvectors.
     def refresh_content_tsvector
-      self.class.where(id: id).update_all([
-        "content_tsvector = to_tsvector(?::regconfig, content)",
-        document.knowledge_base.tsvector_config
-      ])
+      self.class.refresh_tsvector!(ids: id, config: document.knowledge_base.tsvector_config)
     end
   end
 end

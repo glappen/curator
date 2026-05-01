@@ -62,28 +62,24 @@ module Curator
                           target: ActionView::RecordIdentifier.dom_id(self, :card)
     }
 
-    # Strong-params permit list, partitioned by form action. `embedding_model`
-    # and `slug` are creation-time-only — `update` permits the editable subset
-    # so a hand-crafted POST can't bypass the `disabled` form attributes and
-    # corrupt embeddings or break URLs.
-    EDITABLE_PARAMS = %i[
-      name description is_default
-      retrieval_strategy chunk_limit similarity_threshold
-      tsvector_config include_citations strict_grounding
-      chunk_size chunk_overlap chat_model system_prompt
-    ].freeze
-    LOCKED_PARAMS = %i[embedding_model slug].freeze
-
-    def self.permitted_params(action:)
-      case action.to_sym
-      when :new, :create then EDITABLE_PARAMS + LOCKED_PARAMS
-      when :edit, :update then EDITABLE_PARAMS
-      else raise ArgumentError, "unknown action: #{action.inspect}"
-      end
-    end
-
     def self.default
       find_by(is_default: true)
+    end
+
+    # Normalizes the `knowledge_base:` argument that public APIs accept:
+    # nil falls back to the default KB, an instance passes through, and a
+    # String/Symbol is looked up by slug. Anything else is a programmer
+    # error and raises ArgumentError.
+    def self.resolve(arg)
+      case arg
+      when nil            then default!
+      when KnowledgeBase  then arg
+      when String, Symbol then find_by!(slug: arg.to_s)
+      else
+        raise ArgumentError,
+              "knowledge_base: must be a Curator::KnowledgeBase, String, or " \
+              "Symbol slug (got #{arg.class})"
+      end
     end
 
     # Routes use `param: :slug`, so URL helpers must read slug, not id.
@@ -111,8 +107,6 @@ module Curator
       find_by!(is_default: true)
     end
 
-    private
-
     def self.with_default_lock
       transaction do
         connection.execute(
@@ -123,6 +117,9 @@ module Curator
         yield
       end
     end
+    private_class_method :with_default_lock
+
+    private
 
     # Serialize concurrent default-flips on a Postgres advisory lock so
     # they can't race the partial unique index
@@ -132,7 +129,7 @@ module Curator
     # true would both clear+set and the second would surface
     # ActiveRecord::RecordNotUnique to callers.
     def unset_prior_default
-      self.class.with_default_lock do
+      self.class.send(:with_default_lock) do
         self.class.where(is_default: true).where.not(id: id).update_all(is_default: false)
       end
     end

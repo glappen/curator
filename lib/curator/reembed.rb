@@ -20,8 +20,10 @@ module Curator
 
     Result = Data.define(:documents_touched, :chunks_touched, :scope)
 
+    def self.call(...) = new(...).call
+
     def initialize(knowledge_base: nil, scope: :stale)
-      @kb    = resolve_kb(knowledge_base)
+      @kb    = KnowledgeBase.resolve(knowledge_base)
       @scope = scope.to_sym
       raise ArgumentError, "scope: must be one of #{SCOPES.inspect} (got #{scope.inspect})" \
         unless SCOPES.include?(@scope)
@@ -48,18 +50,6 @@ module Curator
     end
 
     private
-
-    def resolve_kb(kb)
-      case kb
-      when nil                  then KnowledgeBase.default!
-      when KnowledgeBase        then kb
-      when String, Symbol       then KnowledgeBase.find_by!(slug: kb.to_s)
-      else
-        raise ArgumentError,
-              "knowledge_base: must be a Curator::KnowledgeBase, String, or " \
-              "Symbol slug (got #{kb.class})"
-      end
-    end
 
     # Returns { document_id => [chunk_id, ...] } for chunks the scope
     # selects. Empty hash when nothing matches — caller short-circuits.
@@ -95,7 +85,7 @@ module Curator
       # need conditional unwrapping on the response side.
       result = RubyLLM.embed([ "a" ], model: @kb.embedding_model)
       actual = result.vectors.first.size
-      expected = embedding_column_dim
+      expected = Curator::Embedding.dimension
       return if actual == expected
 
       raise Curator::EmbeddingDimensionMismatch.new(
@@ -109,10 +99,6 @@ module Curator
             "reembed pre-flight embed failed (#{e.class}): #{e.message}"
     end
 
-    def embedding_column_dim
-      Curator::Embedding.columns_hash["embedding"].sql_type[/\Avector\((\d+)\)\z/, 1].to_i
-    end
-
     def reembed_document!(doc_id, chunk_ids)
       Curator::Chunk.transaction do
         Curator::Embedding.where(chunk_id: chunk_ids).delete_all
@@ -121,12 +107,7 @@ module Curator
         # tsvector_config — chunk's after_save callback only fires on
         # content changes, so update_all bypassing callbacks is the
         # right tool here.
-        if @scope == :all
-          Curator::Chunk.where(id: chunk_ids).update_all([
-            "content_tsvector = to_tsvector(?::regconfig, content)",
-            @kb.tsvector_config
-          ])
-        end
+        Curator::Chunk.refresh_tsvector!(ids: chunk_ids, config: @kb.tsvector_config) if @scope == :all
         Curator::Document.where(id: doc_id).update_all(status: "embedding")
       end
       # Enqueue outside the transaction so the worker can't pick up the

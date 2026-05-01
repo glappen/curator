@@ -15,20 +15,14 @@ module Curator
     #
     # Vector and Keyword are run sequentially; see m3 implementation
     # notes for why threading isn't on the table here.
-    class Hybrid
-      def call(kb, query, query_vec, limit:, threshold:)
-        return [] if limit <= 0
+    module Hybrid
+      module_function
 
-        vector_hits  = Vector.new.call(kb, query_vec, limit: limit, threshold: threshold)
-        keyword_hits = Keyword.new.call(kb, query, limit: limit)
-        self.class.fuse(vector_hits, keyword_hits, limit: limit)
-      end
-
-      # Pure fusion of two ranked Hit lists. Public for the Retriever
-      # which calls Vector + Keyword directly so it can record their
-      # candidate counts in the rrf_fusion trace payload without
-      # double-running the queries.
-      def self.fuse(vector_hits, keyword_hits, limit:)
+      # Pure fusion of two ranked Hit lists. The Pipeline calls Vector
+      # and Keyword directly so it can record their candidate counts
+      # in the rrf_fusion trace payload without double-running the
+      # queries, then hands the two lists here for fusion.
+      def fuse(vector_hits, keyword_hits, limit:)
         return [] if limit <= 0
 
         vector_ids       = vector_hits.map(&:chunk_id)

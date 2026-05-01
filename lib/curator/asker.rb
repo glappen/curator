@@ -12,6 +12,8 @@ module Curator
   # so an early failure still leaves a row that records the operator
   # intent.
   class Asker
+    def self.call(*args, **kwargs, &block) = new(*args, **kwargs).call(&block)
+
     def initialize(query, knowledge_base: nil, limit: nil, threshold: nil, strategy: nil,
                    system_prompt: nil, chat_model: nil)
       @raw_query              = query
@@ -31,30 +33,18 @@ module Curator
         threshold:      @threshold_override,
         strategy:       @strategy_override
       )
-      effective_chat_model = @chat_model_override || pipeline.knowledge_base.chat_model
-
-      retrieval_row = open_retrieval_row!(pipeline, effective_chat_model)
+      kb                   = pipeline.knowledge_base
+      effective_chat_model = @chat_model_override || kb.chat_model
+      retrieval_row        = Curator::Retrieval.open_for(
+        pipeline:          pipeline,
+        chat_model:        effective_chat_model,
+        strict_grounding:  kb.strict_grounding,
+        include_citations: kb.include_citations
+      )
       run(pipeline, retrieval_row, effective_chat_model, &stream_block)
     end
 
     private
-
-    def open_retrieval_row!(pipeline, chat_model)
-      return nil unless Curator.config.log_queries
-      kb = pipeline.knowledge_base
-
-      Curator::Retrieval.create!(
-        knowledge_base:       kb,
-        query:                @raw_query,
-        chat_model:           chat_model,
-        embedding_model:      kb.embedding_model,
-        retrieval_strategy:   pipeline.strategy.to_s,
-        similarity_threshold: pipeline.threshold,
-        chunk_limit:          pipeline.limit,
-        strict_grounding:     kb.strict_grounding,
-        include_citations:    kb.include_citations
-      )
-    end
 
     def run(pipeline, retrieval_row, chat_model, &stream_block)
       started_at = Time.current
@@ -73,12 +63,8 @@ module Curator
           [ llm_msg.content, chat.messages.order(:id).last.id ]
         end
 
-      duration = ((Time.current - started_at) * 1000).to_i
-      retrieval_row&.update!(
-        message_id:        ar_message_id,
-        status:            :success,
-        total_duration_ms: duration
-      )
+      retrieval_row&.mark_success!(started_at: started_at, message_id: ar_message_id)
+      duration = retrieval_row&.total_duration_ms || ((Time.current - started_at) * 1000).to_i
 
       Curator::Answer.new(
         answer:            answer_text,
@@ -87,7 +73,7 @@ module Curator
         strict_grounding:  kb.strict_grounding
       )
     rescue StandardError => e
-      mark_failed!(retrieval_row, started_at, e)
+      retrieval_row&.mark_failed!(e, started_at: started_at)
       raise
     end
 
@@ -221,15 +207,6 @@ module Curator
         duration_ms:    duration_ms,
         knowledge_base: kb,
         retrieval_id:   retrieval_row&.id
-      )
-    end
-
-    def mark_failed!(retrieval_row, started_at, error)
-      return if retrieval_row.nil?
-      retrieval_row.update!(
-        status:            :failed,
-        error_message:     "#{error.class}: #{error.message}",
-        total_duration_ms: ((Time.current - started_at) * 1000).to_i
       )
     end
   end

@@ -1,8 +1,9 @@
 <%# URL helpers come from `Curator::Engine.routes.url_helpers` so the partial
     renders correctly both in normal request flow AND in Turbo broadcast
     context (broadcasts render via ApplicationController.renderer, which
-    does not automatically expose engine routes via the unqualified helpers).
-    Phase 3 link target — `kbs/:slug/documents` — is mounted by Phase 4. %>
+    does not automatically expose engine routes via the unqualified helpers
+    — and engine helper modules don't ride along either). Phase 3 link
+    target — `kbs/:slug/documents` — is mounted by Phase 4. %>
 <% url = Curator::Engine.routes.url_helpers %>
 <%# `docs_count` and `last_ingested` are preloaded by the index controller
     via two grouped aggregates. The broadcast render path (KB or Document

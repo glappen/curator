@@ -6,6 +6,8 @@ module Curator
   # `:failed`. When `Curator.config.log_queries` is false no row is
   # written and `retrieval_id` is nil.
   class Retriever
+    def self.call(...) = new(...).call
+
     def initialize(query, knowledge_base: nil, limit: nil, threshold: nil, strategy: nil)
       @raw_query          = query
       @knowledge_base     = knowledge_base
@@ -15,45 +17,28 @@ module Curator
     end
 
     def call
-      pipeline = Curator::Retrievers::Pipeline.new(
+      pipeline      = Curator::Retrievers::Pipeline.new(
         query:          @raw_query,
         knowledge_base: @knowledge_base,
         limit:          @limit_override,
         threshold:      @threshold_override,
         strategy:       @strategy_override
       )
-
-      retrieval_row = open_retrieval_row!(pipeline)
+      retrieval_row = Curator::Retrieval.open_for(pipeline: pipeline)
       run(pipeline, retrieval_row)
     end
 
     private
 
-    def open_retrieval_row!(pipeline)
-      return nil unless Curator.config.log_queries
-
-      Curator::Retrieval.create!(
-        knowledge_base:       pipeline.knowledge_base,
-        query:                @raw_query,
-        chat_model:           pipeline.knowledge_base.chat_model,
-        embedding_model:      pipeline.knowledge_base.embedding_model,
-        retrieval_strategy:   pipeline.strategy.to_s,
-        similarity_threshold: pipeline.threshold,
-        chunk_limit:          pipeline.limit
-      )
-    end
-
     def run(pipeline, retrieval_row)
       started_at = Time.current
       hits       = pipeline.call(retrieval_row)
-      duration   = ((Time.current - started_at) * 1000).to_i
-
-      retrieval_row&.update!(status: :success, total_duration_ms: duration)
+      retrieval_row&.mark_success!(started_at: started_at)
 
       Curator::RetrievalResults.new(
         query:          @raw_query,
         hits:           hits,
-        duration_ms:    duration,
+        duration_ms:    retrieval_row&.total_duration_ms || ((Time.current - started_at) * 1000).to_i,
         knowledge_base: pipeline.knowledge_base,
         retrieval_id:   retrieval_row&.id
       )
@@ -62,17 +47,8 @@ module Curator
       # already-opened retrieval row to :failed — programming bugs, DB
       # failures, Neighbor::Errors all need the row marked so operators
       # can see them in the retrievals admin view.
-      mark_failed!(retrieval_row, started_at, e)
+      retrieval_row&.mark_failed!(e, started_at: started_at)
       raise
-    end
-
-    def mark_failed!(retrieval_row, started_at, error)
-      return if retrieval_row.nil?
-      retrieval_row.update!(
-        status:            :failed,
-        error_message:     "#{error.class}: #{error.message}",
-        total_duration_ms: ((Time.current - started_at) * 1000).to_i
-      )
     end
   end
 end

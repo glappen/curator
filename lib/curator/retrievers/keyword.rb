@@ -19,7 +19,7 @@ module Curator
 
         scope = matching_chunks(kb, query).limit(limit)
 
-        scope.each_with_index.map { |chunk, idx| build_hit(chunk, idx + 1) }
+        scope.each_with_index.map { |chunk, idx| Curator::Hit.from_chunk(chunk, rank: idx + 1, score: nil) }
       end
 
       private
@@ -42,20 +42,6 @@ module Curator
           .where("curator_chunks.content_tsvector @@ #{tsquery_sql}")
           .order(Arel.sql("ts_rank(curator_chunks.content_tsvector, #{tsquery_sql}) DESC, curator_chunks.id ASC"))
           .includes(:document)
-      end
-
-      def build_hit(chunk, rank)
-        document = chunk.document
-        Curator::Hit.new(
-          rank:          rank,
-          chunk_id:      chunk.id,
-          document_id:   document.id,
-          document_name: document.title,
-          page_number:   chunk.page_number,
-          text:          chunk.content,
-          score:         nil,
-          source_url:    document.source_url
-        )
       end
     end
   end

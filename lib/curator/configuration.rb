@@ -57,10 +57,5 @@ module Curator
       @authenticate_admin_with = block if block
       @authenticate_admin_with
     end
-
-    def authenticate_api_with(&block)
-      @authenticate_api_with = block if block
-      @authenticate_api_with
-    end
   end
 end

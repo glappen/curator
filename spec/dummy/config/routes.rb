@@ -6,5 +6,4 @@ end
 # See spec/requests/curator/authentication_concern_spec.rb.
 Rails.application.routes.draw do
   get "/__curator_test_admin", to: "curator_test_admin#index"
-  get "/__curator_test_api",   to: "curator_test_api#index"
 end

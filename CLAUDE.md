@@ -117,11 +117,10 @@ will have stabilized, diff churn goes away, and having a golden
 `bin/rails s` (from `spec/dummy`) boots the dummy with the engine
 mounted at `/curator`. `spec/dummy/config/initializers/curator_dev.rb`
 ships a development-only override that wires `authenticate_admin_with`
-+ `authenticate_api_with` to a permissive block and switches the
-extractor to `:basic`, so `/curator/*` is reachable without
-configuring real auth and `.md`/`.txt`/`.csv`/`.html` ingest works
-out of the box. The override is `Rails.env.development?`-guarded —
-test env is unaffected.
+to a permissive block and switches the extractor to `:basic`, so
+`/curator/*` is reachable without configuring real auth and
+`.md`/`.txt`/`.csv`/`.html` ingest works out of the box. The override
+is `Rails.env.development?`-guarded — test env is unaffected.
 
 `curator_dev.rb` is hand-written and committed; it survives
 `bin/reset-dummy` because reset-dummy only deletes the

@@ -1,9 +1,8 @@
 module Curator
-  # Shared auth dispatch for Curator's admin and API controllers. Each
-  # including controller names its hook via `curator_authenticate :admin`
-  # or `curator_authenticate :api`, which installs the before_action.
+  # Admin auth dispatch. Including controllers install the before_action
+  # by calling `curator_authenticate_admin`.
   #
-  # At request time we look up `Curator.config.authenticate_#{hook}_with`:
+  # At request time we look up `Curator.config.authenticate_admin_with`:
   # a Proc stored from the host's initializer. If configured, it runs via
   # `instance_exec` inside the controller — `current_user`, `redirect_to`,
   # `session`, `main_app.*` helpers are all in scope.
@@ -18,21 +17,21 @@ module Curator
     extend ActiveSupport::Concern
 
     class_methods do
-      def curator_authenticate(hook_name)
-        before_action { run_curator_authentication(hook_name) }
+      def curator_authenticate_admin
+        before_action :run_curator_admin_authentication
       end
     end
 
     private
 
-    def run_curator_authentication(hook_name)
-      block = Curator.config.public_send(:"authenticate_#{hook_name}_with")
+    def run_curator_admin_authentication
+      block = Curator.config.authenticate_admin_with
       return instance_exec(&block) if block
 
       return if ::Rails.env.test?
 
       raise Curator::AuthNotConfigured,
-            "Curator requires `authenticate_#{hook_name}_with` to be configured " \
+            "Curator requires `authenticate_admin_with` to be configured " \
             "in config/initializers/curator.rb before first use."
     end
   end

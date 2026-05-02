@@ -41,13 +41,8 @@ curator-rails/
 │   │       ├── knowledge_bases_controller.rb
 │   │       ├── documents_controller.rb
 │   │       ├── chunks_controller.rb         # chunk inspector
-│   │       ├── queries_controller.rb        # query testing console
-│   │       ├── evaluations_controller.rb
-│   │       └── api/
-│   │           ├── base_controller.rb       # applies API auth hook
-│   │           ├── queries_controller.rb
-│   │           ├── retrievals_controller.rb
-│   │           └── streams_controller.rb
+│   │       ├── console_controller.rb        # query testing console (M6)
+│   │       └── evaluations_controller.rb
 │   ├── jobs/
 │   │   └── curator/
 │   │       ├── ingest_document_job.rb       # extract + chunk
@@ -527,52 +522,20 @@ joined in CSV; JSON array in JSON), evaluator_id, evaluator_role, created_at`.
 
 ## REST API
 
-Mounted at `<mount-path>/api/`. Default: `/curator/api/`.
-
-### Endpoints
-
-```
-POST /curator/api/query              # Q&A, non-streaming
-POST /curator/api/stream             # Q&A, Turbo Streams
-GET  /curator/api/retrieve           # Retrieval (hits only, no LLM)
-POST /curator/api/evaluations        # Submit user feedback
-                                     # (links to a prior retrieval via query_id)
-```
-
-All endpoints accept `?knowledge_base=<slug>`. Omitting uses the default KB.
-
-### Success envelope
-
-```json
-{
-  "data": {
-    "answer": "...",
-    "sources": [...],
-    "context_count": 3
-  },
-  "meta": {
-    "knowledge_base": "support",
-    "query_id": "uuid-or-id",
-    "duration_ms": 847
-  }
-}
-```
-
-### Error format
-
-```json
-{
-  "error": {
-    "code": "unknown_knowledge_base",
-    "message": "Knowledge base 'foobar' does not exist",
-    "details": { "available": ["default", "support"] }
-  }
-}
-```
-
-HTTP status codes: 400 validation, 401 auth, 404 KB not found, 422 input
-semantically invalid, 500 LLM/embedding failure, 502 upstream provider error,
-503 rate limit / temporary.
+v1 ships engine-internal Hotwire UI only. Host apps expose Curator to their
+end users via the in-process service object API (`Curator.ask`,
+`Curator.retrieve`, `Curator.chat`) wrapped in their own controllers, or
+via the M8 `curator:chat_ui` generator. A first-class REST API
+(`/api/query`, `/api/retrieve`, `/api/stream`), JSON envelope, error
+format, and `authenticate_api_with` auth hook are deferred to v2+ —
+rationale: the gem mounts in a Rails host that already has in-process
+access to the service objects, so a REST surface is genuinely useful only
+for non-Rails clients (mobile, separate-origin SPAs, server-to-server)
+and brings real design / docs / maintenance commitments (envelope
+versioning, error codes, API tokens, CORS, OpenAPI, rate limits) — easy
+to add later if demand materializes, hard to remove once shipped. See
+the "Deferred to v2+ → Added during planning" section below for the full
+list of v2+ API surface area.
 
 ---
 
@@ -735,12 +698,10 @@ Curator.configure do |config|
   # Extractor — :kreuzberg (default) | :basic
   config.extractor = :kreuzberg
 
-  # Auth hooks (separate for admin UI and API; option B from design)
+  # Auth hook for the admin UI. v1 is Hotwire-only; the API auth hook
+  # was removed alongside the REST API surface (see M6 amendment).
   config.authenticate_admin_with do
     redirect_to main_app.login_path unless current_user&.admin?
-  end
-  config.authenticate_api_with do
-    render json: { error: { code: "unauthorized" } }, status: 401 unless api_token_valid?
   end
 
   # Document handling
@@ -858,14 +819,12 @@ is demo-able end-to-end via CLI).
   (host must have a configured cable adapter — Solid Cable on Rails
   7.1+/8, Redis pre-7.1)
 
-### M6 — Interactive Features + Public API
-- Streaming infrastructure (`/api/stream` LLM-token endpoint; admin-UI
-  Turbo Streams broadcasts shipped in M5)
-- Query Testing Console (live streaming answer + retrieved chunks side-by-side;
-  tweak params and re-run)
-- REST API controllers: `/api/query`, `/api/retrieve`, `/api/stream`
-- Envelope + error format implementation
-- API auth hook integration
+### M6 — Query Testing Console + Token Streaming
+- Query Testing Console (admin Turbo UI; live token streaming via
+  `ActionController::Live` + Turbo Streams; per-run parameter overrides;
+  runs persist as `curator_retrievals` rows).
+- Token-streaming module (`Curator::Streaming::TurboStream`) reusable by
+  the M8 chat UI without changes.
 
 ### M7 — Evaluations
 - `Curator::Evaluation` model + admin UI controllers
@@ -873,8 +832,9 @@ is demo-able end-to-end via CLI).
 - Failure categories dropdown with tooltips
 - `Curator::Evaluations::Exporter` service (CSV via streaming, JSON)
 - Admin UI export button + `curator:evaluations:export` rake task
-- `/api/evaluations` endpoint for end-user thumb submission from host-app
-  frontends
+- In-app feedback submission (admin UI thumbs/feedback form writes
+  `Curator::Evaluation` directly; host apps that want end-user feedback
+  wrap `Curator::Evaluation.create!` in their own controller)
 
 ### M8 — Persistent Chat
 - `Curator::Chat` wrapper class
@@ -908,6 +868,19 @@ is demo-able end-to-end via CLI).
 - Fine-tuning / model training
 
 ### Added during planning
+- **REST API endpoints** (`/api/query`, `/api/retrieve`, `/api/stream`,
+  `/api/evaluations`) — for non-Rails clients (mobile, separate-origin
+  SPAs, server-to-server). Removed from v1 in the M6 amendment because
+  the gem mounts in a Rails host that already has in-process access to
+  `Curator.ask` / `Curator.retrieve` / `Curator.chat`. Easy to add later
+  once shipped, hard to remove once shipped.
+- **JSON success/error envelope** (`data` + `meta` shape; error code
+  taxonomy spanning 400/401/404/422/500/502/503) — depends on REST API.
+- **`authenticate_api_with` auth hook** + API tokens — depends on REST
+  API. v1 retains only `authenticate_admin_with` for the Hotwire admin
+  UI.
+- **Non-Rails-client concerns** — CORS, OpenAPI/Swagger spec, rate
+  limiting, API token issuance/rotation. All deferred with the REST API.
 - **Tool-based retrieval for one-shot queries** — spec's "advanced usage" where
   the LLM decides when to retrieve. v1 ships this only for `Curator.chat`
   (persistent, where multi-turn demands it). One-shot `Curator.ask` uses

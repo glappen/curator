@@ -18,6 +18,5 @@ return unless Rails.env.development?
 
 Curator.configure do |config|
   config.authenticate_admin_with { true }
-  config.authenticate_api_with   { true }
   config.extractor = :basic
 end

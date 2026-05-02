@@ -72,11 +72,17 @@ _(empty — promote a phase from Next Steps when starting)_
      skeleton).
    - Drop `authenticate_api_with` from
      `lib/curator/configuration.rb`.
-   - Drop the `:api` branch from `Curator::Authentication` concern
-     (`curator_authenticate :api`); audit for any specs that
-     exercise the API auth path and remove them. M1 originally
-     wired this; with the API gone, the `:admin` branch is the only
-     remaining authenticator.
+   - Remove the `:api` caller of `Curator::Authentication`. The
+     concern itself was hook-name-parameterized rather than
+     branched, so what gets dropped is the caller
+     (`Api::BaseController` plus its `Configuration`-side getter),
+     not code inside the concern. With only the `:admin` caller
+     left, simplify the concern at the same time: replace
+     `curator_authenticate(hook_name)` with a no-arg
+     `curator_authenticate_admin` (per CLAUDE.md's "don't design
+     for hypothetical future requirements" guidance — re-introduce
+     parameterization when v2 actually adds a second hook). Audit
+     specs for the API auth path and remove them.
    - Drop the `authenticate_api_with` example from
      `lib/generators/curator/install/templates/curator.rb.tt`.
    - **Validate**: `bundle exec rspec --format progress` green;

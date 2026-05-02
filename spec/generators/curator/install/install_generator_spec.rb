@@ -68,7 +68,7 @@ RSpec.describe Curator::Generators::InstallGenerator, type: :generator do
       content = File.read(path)
       expect(content).to include("Curator.configure")
       expect(content).to include("authenticate_admin_with")
-      expect(content).to include("authenticate_api_with")
+      expect(content).not_to include("authenticate_api_with")
       expect(content).to include("extractor")
       expect(content).to include("trace_level")
     end

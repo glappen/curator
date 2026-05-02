@@ -32,9 +32,8 @@ RSpec.describe Curator::Configuration do
       expect(config.embedding_batch_size).to eq(100)
     end
 
-    it "has no auth hooks configured" do
+    it "has no auth hook configured" do
       expect(config.authenticate_admin_with).to be_nil
-      expect(config.authenticate_api_with).to be_nil
     end
 
     it "disables OCR and force_ocr, defaulting ocr_language to eng" do
@@ -106,14 +105,6 @@ RSpec.describe Curator::Configuration do
 
     it "returns nil before a block is provided" do
       expect(config.authenticate_admin_with).to be_nil
-    end
-  end
-
-  describe "#authenticate_api_with" do
-    it "stores a block and returns it on subsequent calls without args" do
-      block = -> { "api auth" }
-      config.authenticate_api_with(&block)
-      expect(config.authenticate_api_with).to eq(block)
     end
   end
 end

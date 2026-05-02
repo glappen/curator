@@ -28,9 +28,9 @@ Curator.configure do |config|
   # Auth
   # ============================================================
   #
-  # Curator ships no opinion about auth. Both hooks are required before the
-  # engine is reachable outside the test environment — unconfigured requests
-  # raise `Curator::AuthNotConfigured` in dev/prod.
+  # Curator ships no opinion about auth. The admin hook is required before
+  # the engine is reachable outside the test environment — unconfigured
+  # requests raise `Curator::AuthNotConfigured` in dev/prod.
   #
   # The block runs via `instance_exec` inside the controller, so `current_user`,
   # `session`, `redirect_to`, `main_app.*` helpers are all available.
@@ -38,11 +38,6 @@ Curator.configure do |config|
   # Admin UI (Hotwire views under the mounted engine).
   # config.authenticate_admin_with do
   #   redirect_to main_app.new_user_session_path unless current_user&.admin?
-  # end
-
-  # JSON API endpoints (token auth, Doorkeeper, whatever you prefer).
-  # config.authenticate_api_with do
-  #   head :unauthorized unless request.headers["X-API-Key"] == ENV["CURATOR_API_KEY"]
   # end
 
   # ============================================================

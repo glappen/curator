@@ -9,6 +9,6 @@ module Curator
     # admin views without per-controller `helper Foo` plumbing.
     helper :all
 
-    curator_authenticate :admin
+    curator_authenticate_admin
   end
 end

@@ -1,0 +1,20 @@
+<%# Phase 1 skeleton. Phase 2B fills in the three-column layout. %>
+<h1>Query Testing Console</h1>
+
+<div class="console-shell">
+  <div class="console-form">
+    <%= render "form", knowledge_base: @knowledge_base, knowledge_bases: @knowledge_bases %>
+  </div>
+
+  <div class="console-answer">
+    <turbo-frame id="console-answer"></turbo-frame>
+  </div>
+
+  <div class="console-sources">
+    <turbo-frame id="console-sources"></turbo-frame>
+  </div>
+</div>
+
+<turbo-frame id="console-status">
+  <%= render "status", state: :idle %>
+</turbo-frame>

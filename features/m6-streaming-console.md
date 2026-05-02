@@ -25,105 +25,30 @@ implementation.md as a living document — Phase 0 ships those edits.
 
 ## Completed
 
-_(empty — promote a phase from Next Steps when starting)_
+- [x] **Phase 0 — Spec amendments + API skeleton removal.** Shipped in
+   `64f54fd` — REST API skeleton deleted, `authenticate_api_with` removed
+   from Configuration + install template, `Curator::Authentication`
+   simplified to a single hardcoded admin path, `features/implementation.md`
+   amended (M6 bullets, REST API → deferred-note, four "Deferred to v2+
+   → Added during planning" entries).
+- [x] **Phase 1 — Contract scaffolding.** Routes (`get console`,
+   `post console/run`, nested `get kbs/:slug/console`), skeleton
+   `Curator::ConsoleController` (`show` resolves KB; `run` includes
+   `ActionController::Live` and returns 501), placeholder views
+   (`show.html.erb`, `_form`, `_source`, `_status`), skeleton
+   `Curator::Streaming::TurboStream` module with no-op
+   `#append`/`#replace`/`#close` + `.open` block sugar (TODO Phase 2A
+   markers), `lib/curator.rb` requires the module, skeleton specs at
+   `spec/curator/streaming/turbo_stream_spec.rb` and
+   `spec/requests/curator/console_spec.rb`. Contract is locked for
+   2A/2B fork. `bundle exec rspec` 599 examples / 0 failures;
+   `bundle exec rubocop` no offenses.
 
 ## Current Work
 
 _(empty — promote a phase from Next Steps when starting)_
 
 ## Next Steps
-
-- [ ] **Phase 0 — Spec amendments + API skeleton removal.** Sequential.
-   Blocks Phase 1.
-   - Edit `features/implementation.md` (living-document update):
-     - "Implementation Milestones → M6": rewrite bullets to:
-       `Query Testing Console (admin Turbo UI; live token streaming
-       via ActionController::Live + Turbo Streams; per-run parameter
-       overrides; runs persist as curator_retrievals rows).` and
-       `Token-streaming module (Curator::Streaming::TurboStream)
-       reusable by M8 chat UI.` Drop the REST API / envelope / API
-       auth bullets.
-     - "REST API" section (line ~528-575): replace with a one-paragraph
-       note: *"v1 ships engine-internal Hotwire UI only. Host apps
-       expose Curator to their end users via the in-process service
-       object API (`Curator.ask`, `Curator.retrieve`, `Curator.chat`)
-       wrapped in their own controllers, or via the M8
-       `curator:chat_ui` generator. A first-class REST API
-       (`/api/query`, `/api/retrieve`, `/api/stream`), JSON envelope,
-       error format, and `authenticate_api_with` auth hook are
-       deferred to v2+."*
-     - "Configuration" example (line ~733): drop the
-       `config.authenticate_api_with do … end` block.
-     - "Gem Structure" tree: drop `app/controllers/curator/api/` and
-       `base_controller.rb` lines.
-     - "Implementation Milestones → M7": rewrite the
-       `/api/evaluations` bullet to:
-       `In-app feedback submission (admin UI thumbs/feedback form
-       writes Curator::Evaluation directly; host apps that want
-       end-user feedback wrap Curator::Evaluation.create! in their
-       own controller).`
-     - "Deferred to v2+ → Added during planning": add four entries:
-       *REST API endpoints* (`/api/query`, `/api/retrieve`,
-       `/api/stream`, `/api/evaluations`), *JSON success/error
-       envelope*, *`authenticate_api_with` auth hook*,
-       *non-Rails-client concerns* (CORS, OpenAPI/Swagger spec,
-       rate limiting, API tokens).
-   - Delete `app/controllers/curator/api/` (the `BaseController`
-     skeleton).
-   - Drop `authenticate_api_with` from
-     `lib/curator/configuration.rb`.
-   - Remove the `:api` caller of `Curator::Authentication`. The
-     concern itself was hook-name-parameterized rather than
-     branched, so what gets dropped is the caller
-     (`Api::BaseController` plus its `Configuration`-side getter),
-     not code inside the concern. With only the `:admin` caller
-     left, simplify the concern at the same time: replace
-     `curator_authenticate(hook_name)` with a no-arg
-     `curator_authenticate_admin` (per CLAUDE.md's "don't design
-     for hypothetical future requirements" guidance — re-introduce
-     parameterization when v2 actually adds a second hook). Audit
-     specs for the API auth path and remove them.
-   - Drop the `authenticate_api_with` example from
-     `lib/generators/curator/install/templates/curator.rb.tt`.
-   - **Validate**: `bundle exec rspec --format progress` green;
-     `bundle exec rubocop` clean. Grep `app/controllers/curator/api`
-     returns zero matches. Grep `authenticate_api_with` returns zero
-     matches outside `features/implementation.md` history.
-
-- [ ] **Phase 1 — Contract scaffolding.** Sequential. Branches Phases
-   2A and 2B fork from this commit.
-   - `config/routes.rb` adds:
-     ```ruby
-     get  "console", to: "console#show", as: :console
-     post "console/run", to: "console#run", as: :console_run
-     # nested under knowledge_bases:
-     resources :knowledge_bases, ... do
-       get "console", to: "console#show", as: :console
-     end
-     ```
-   - Skeleton `app/controllers/curator/console_controller.rb`:
-     `show` action renders the form with KB defaults; `run` action
-     is `include ActionController::Live` with a TODO body that
-     returns 501 for now.
-   - Skeleton view files under `app/views/curator/console/`:
-     - `show.html.erb` — three-column shell scaffold; column
-       contents are placeholder text.
-     - `_form.html.erb` — placeholder form fields (no real values
-       yet).
-     - `_source.html.erb` — placeholder one-source partial.
-     - `_status.html.erb` — placeholder status badge.
-   - Skeleton `lib/curator/streaming/turbo_stream.rb` — module +
-     class signatures only (`#append(text)`, `#replace(target:,
-     html:)`, `#close`, `self.open(stream:, target:) { |pump| ... }`)
-     with no-op bodies + a `# TODO Phase 2A` marker.
-   - Add `require "curator/streaming/turbo_stream"` to `lib/curator.rb`.
-   - Skeleton spec files at the right paths
-     (`spec/curator/streaming/turbo_stream_spec.rb`,
-     `spec/requests/curator/console_spec.rb`) with one trivially-passing
-     example each, so test-collection structure is set.
-   - **Validate**: `bundle exec rspec --format progress` green;
-     `bundle exec rubocop` clean. Visit `/curator/console` in
-     dummy app — placeholder shell renders without errors.
 
 - [ ] **Phase 2A — Streaming module real impl.** Worktree A. Parallel
    with 2B. Branches from Phase 1.

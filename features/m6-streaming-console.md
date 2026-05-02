@@ -43,6 +43,27 @@ implementation.md as a living document — Phase 0 ships those edits.
    `spec/requests/curator/console_spec.rb`. Contract is locked for
    2A/2B fork. `bundle exec rspec` 599 examples / 0 failures;
    `bundle exec rubocop` no offenses.
+- [x] **Phase 2A — Streaming module real impl.** Worktree A
+   (`m6-streaming-module`). `Curator::Streaming::TurboStream`
+   replaces the no-op stubs with real frame writes:
+   `#append(text)` writes a `<turbo-stream action="append">` frame
+   with HTML-escaped body via `ERB::Util.html_escape`;
+   `#replace(target:, html:)` writes a `replace` frame with raw
+   (caller-trusted) HTML to an arbitrary target; `#close` is
+   idempotent and swallows `IOError` / `ActionController::Live::ClientDisconnected`
+   so a mid-stream client disconnect doesn't mask the original error.
+   `.open` block sugar re-raises block errors but always closes via
+   `ensure`. Both `target` attribute and `#append` body are
+   HTML-escaped (defense in depth — current callers pass static
+   gem-internal target strings, but the public kwarg signature is
+   reachable from future callers). Spec at
+   `spec/curator/streaming/turbo_stream_spec.rb` uses `StringIO`
+   and asserts exact frame bytes, body escape, target attribute
+   escape, in-order multi-frame writes, idempotent close,
+   close-error swallowing for both swallowed exception classes,
+   and block-error-with-still-closing for `.open`.
+   `bundle exec rspec` 609 examples / 0 failures;
+   `bundle exec rubocop` no offenses.
 
 ## Current Work
 
@@ -50,35 +71,8 @@ _(empty — promote a phase from Next Steps when starting)_
 
 ## Next Steps
 
-- [ ] **Phase 2A — Streaming module real impl.** Worktree A. Parallel
-   with 2B. Branches from Phase 1.
-   - Implement `Curator::Streaming::TurboStream`:
-     - `#initialize(stream:, target:)` — stores stream + target.
-     - `#append(text)` — writes one
-       `<turbo-stream action="append" target="<%= target %>"><template><%= text %></template></turbo-stream>`
-       frame to `stream`. HTML-escape `text`.
-     - `#replace(target:, html:)` — writes a `replace` frame with
-       the given target + raw HTML. (Caller is responsible for
-       escaping; this is for server-rendered partials.)
-     - `#close` — flushes and closes `stream`. Idempotent — second
-       call is a no-op.
-     - `self.open(stream:, target:)` block sugar — yields a pump,
-       ensures `#close` in an `ensure` block, swallows
-       `IOError` / `ActionController::Live::ClientDisconnected` on
-       close (operator navigated away mid-stream).
-   - Specs in `spec/curator/streaming/turbo_stream_spec.rb`:
-     - Use `StringIO.new` as the `stream:` substitute. Assert
-       frame bytes match expected `<turbo-stream>` shape exactly,
-       including escape behavior on `#append`.
-     - `.open` block sugar yields the pump and closes the stream.
-     - Closing twice is a no-op.
-     - `IOError` raised inside the block during `#append` is
-       re-raised, but `#close` still happens.
-   - **Validate**: streaming spec green; rubocop clean. No Console
-     files touched in this worktree.
-
 - [ ] **Phase 2B — Console UI + controller.** Worktree B. Parallel
-   with 2A. Branches from Phase 1.
+   with 2A (now complete). Branches from Phase 1.
    - `Curator::ConsoleController#show`:
      - Resolves KB via `Curator::KnowledgeBase.resolve(params[:knowledge_base_slug] || params[:slug])`.
      - Falls back to `KnowledgeBase.default!` when no slug present

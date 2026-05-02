@@ -1,14 +1,14 @@
+require "erb"
+
 module Curator
   module Streaming
-    # Phase 1 skeleton. `.open` provides just enough block-sugar shape
-    # for Phase 2B's controller to call against; the per-frame writers
-    # (#append, #replace, #close) are no-op stubs. Phase 2A replaces
-    # the stubs with real `<turbo-stream>` frame writes and hardens
-    # `.open` to swallow `IOError` / `ActionController::Live::ClientDisconnected`
-    # on close (operator navigated away mid-stream).
+    # Thin pump for emitting `<turbo-stream>` frames into a chunked
+    # `text/vnd.turbo-stream.html` response body. The Console controller
+    # (Phase 2B) instantiates this against `response.stream` from
+    # `ActionController::Live`; specs instantiate against `StringIO`.
     #
-    # TODO Phase 2A: implement #append, #replace, #close + close-error
-    # swallowing in `.open`.
+    # Wire format per frame:
+    #   <turbo-stream action="..." target="..."><template>...</template></turbo-stream>
     class TurboStream
       def self.open(stream:, target:)
         pump = new(stream: stream, target: target)
@@ -23,19 +23,39 @@ module Curator
         @closed = false
       end
 
+      # Append `text` to the pump's bound target. Text is HTML-escaped —
+      # this is the path LLM token deltas flow through, so it must be safe
+      # against `<script>` etc. in model output.
       def append(text)
-        # TODO Phase 2A: write a `<turbo-stream action="append">` frame.
+        write_frame(action: "append", target: @target, body: ERB::Util.html_escape(text))
       end
 
+      # Replace `target`'s contents with raw `html`. Caller owns escaping —
+      # this exists for server-rendered partials (sources list, status badge)
+      # where the HTML is trusted.
       def replace(target:, html:)
-        # TODO Phase 2A: write a `<turbo-stream action="replace">` frame.
+        write_frame(action: "replace", target: target, body: html)
       end
 
+      # Idempotent. Swallows IOError / ClientDisconnected so a mid-stream
+      # operator-navigate-away doesn't mask the real error from the block
+      # (or surface as noise when the stream was already torn down).
       def close
         return if @closed
 
         @closed = true
-        # TODO Phase 2A: flush + close the underlying stream.
+        @stream.close
+      rescue IOError, ActionController::Live::ClientDisconnected
+        nil
+      end
+
+      private
+
+      def write_frame(action:, target:, body:)
+        escaped_target = ERB::Util.html_escape(target)
+        @stream.write(
+          %(<turbo-stream action="#{action}" target="#{escaped_target}"><template>#{body}</template></turbo-stream>)
+        )
       end
     end
   end

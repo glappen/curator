@@ -1,20 +1,25 @@
-<%# Phase 1 skeleton. Phase 2B fills in the three-column layout. %>
 <h1>Query Testing Console</h1>
 
 <div class="console-shell">
-  <div class="console-form">
-    <%= render "form", knowledge_base: @knowledge_base, knowledge_bases: @knowledge_bases %>
-  </div>
+  <section class="console-shell__form">
+    <%= render "form",
+               knowledge_base:     @knowledge_base,
+               knowledge_bases:    @knowledge_bases,
+               chat_model_options: @chat_model_options %>
+  </section>
 
-  <div class="console-answer">
-    <turbo-frame id="console-answer"></turbo-frame>
-  </div>
+  <section class="console-shell__answer">
+    <header class="console-shell__head">
+      <h2>Answer</h2>
+      <turbo-frame id="console-status">
+        <%= render "status", state: :idle, message: nil %>
+      </turbo-frame>
+    </header>
+    <turbo-frame id="console-answer" class="console-answer"></turbo-frame>
+  </section>
 
-  <div class="console-sources">
-    <turbo-frame id="console-sources"></turbo-frame>
-  </div>
+  <section class="console-shell__sources">
+    <h2>Sources</h2>
+    <turbo-frame id="console-sources" class="console-sources"></turbo-frame>
+  </section>
 </div>
-
-<turbo-frame id="console-status">
-  <%= render "status", state: :idle %>
-</turbo-frame>

@@ -64,99 +64,43 @@ implementation.md as a living document — Phase 0 ships those edits.
    and block-error-with-still-closing for `.open`.
    `bundle exec rspec` 609 examples / 0 failures;
    `bundle exec rubocop` no offenses.
+- [x] **Phase 2B — Console UI + controller.** Worktree B (this branch).
+   `Curator::ConsoleController#show` resolves KB, exposes `@knowledge_bases`
+   for the selector, and builds `@chat_model_options` from
+   `RubyLLM.models.chat_models` filtered to providers in
+   `RubyLLM::Provider.configured_providers(RubyLLM.config)`, grouped by
+   provider, with a `(custom)` group prepended when `kb.chat_model`
+   isn't in the registry. `#run` (`ActionController::Live`) sets
+   `text/vnd.turbo-stream.html` + `Cache-Control: no-cache`, opens
+   `Curator::Streaming::TurboStream` against `response.stream` targeting
+   `console-answer`, calls `Curator::Asker.call` with form-param overrides
+   (`limit` / `threshold` / `strategy` / `system_prompt` / `chat_model` —
+   blanks pass through as `nil`) and pumps deltas via `pump.append`,
+   then writes `replace` frames for `console-sources` (rendered
+   `_source` collection or `_empty_sources` when zero hits) and
+   `console-status` (done badge). On `Curator::Error` rescue: writes a
+   `replace` frame to `console-status` with the failed badge + message.
+   Real views: three-column `show.html.erb` with `<turbo-frame>`
+   targets, `_form` with KB selector + chunk_limit / similarity_threshold
+   / strategy / chat_model (grouped optgroups) / system_prompt / query
+   inputs + Run + Reset-to-defaults link, `_source` with rank + linked
+   doc title (anchored to `#curator_chunk_<id>`) + score + page +
+   excerpt, `_status` with state badge + optional message, new
+   `_empty_sources` partial. Request spec (`spec/requests/curator/console_spec.rb`)
+   covers GET top-level + nested KB form rendering, POST happy-path
+   chunked response + frame ordering + Asker kwargs wiring + blanks-as-nil,
+   POST failure path → failed status frame. Streaming pump is
+   substituted in-spec via `allow(...).to receive(:open)` with a
+   minimal real-frame writer so the spec passes against Phase 1's
+   no-op stubs and will keep passing after Phase 2A merges.
+   `bundle exec rspec` 604 examples / 0 failures; `bundle exec rubocop`
+   no offenses.
 
 ## Current Work
 
 _(empty — promote a phase from Next Steps when starting)_
 
 ## Next Steps
-
-- [ ] **Phase 2B — Console UI + controller.** Worktree B. Parallel
-   with 2A (now complete). Branches from Phase 1.
-   - `Curator::ConsoleController#show`:
-     - Resolves KB via `Curator::KnowledgeBase.resolve(params[:knowledge_base_slug] || params[:slug])`.
-     - Falls back to `KnowledgeBase.default!` when no slug present
-       (top-level `/curator/console`).
-     - Pulls form defaults from KB columns (chunk_limit, threshold,
-       strategy, system_prompt, chat_model) and the global KB list
-       for the selector.
-     - Builds the chat_model option list:
-       `RubyLLM.models.chat_models` filtered to
-       `RubyLLM::Provider.configured_providers(RubyLLM.config)`,
-       grouped by `provider`. If `kb.chat_model` isn't in the
-       resulting list, prepend it as a `(custom)` option so the
-       form round-trips correctly.
-   - `Curator::ConsoleController#run` — `include ActionController::Live`:
-     - `response.headers["Content-Type"] = "text/vnd.turbo-stream.html"`
-     - `response.headers["Cache-Control"] = "no-cache"` (per
-       `ActionController::Live` guidance).
-     - Calls `Curator::Streaming::TurboStream.open(stream:
-       response.stream, target: "console-answer")` — uses the no-op
-       pump from Phase 1. Inside the block: calls
-       `Curator::Asker.call(query, knowledge_base:, limit:,
-       threshold:, strategy:, system_prompt:, chat_model:) { |delta|
-       pump.append(delta) }`. After Asker returns: writes a
-       `replace` frame to `console-sources` with the rendered
-       `_source` partial collection, then a `replace` frame to
-       `console-status` with the "done" badge.
-     - On `Curator::Error` rescue: writes a `replace` frame to
-       `console-status` with the "failed" badge + error message,
-       then `pump.close`.
-     - `ensure` block does not need to re-close — block sugar
-       handles it.
-   - `app/views/curator/console/show.html.erb` — three-column
-     layout. Left column: `<%= render "form", knowledge_base: @kb,
-     knowledge_bases: @kbs, chat_model_options: @chat_model_options
-     %>`. Center column: `<turbo-frame id="console-answer">` (empty
-     initially; gets `append`ed during run). Right column:
-     `<turbo-frame id="console-sources">` (empty initially; gets
-     `replace`d after retrieval). Status badge `<turbo-frame
-     id="console-status">` somewhere visible.
-   - `app/views/curator/console/_form.html.erb`:
-     - KB `<select>` from `@knowledge_bases`.
-     - `chunk_limit` number input (placeholder = `kb.chunk_limit`).
-     - `similarity_threshold` number input step=0.01 (placeholder
-       = `kb.similarity_threshold`).
-     - `strategy` `<select>` (`hybrid` / `vector` / `keyword`,
-       default = `kb.retrieval_strategy`).
-     - `system_prompt` `<textarea>` (placeholder = `kb.system_prompt`).
-     - `chat_model` `<select>` with `<optgroup>` per provider
-       (built from `@chat_model_options`).
-     - `query` `<textarea>` (the actual question).
-     - "Run" submit button. Form has `data-turbo-stream="true"` so
-       Turbo handles the chunked response.
-     - "Reset to KB defaults" button — JS-free; it's a link back to
-       `console#show` for the current KB.
-   - `app/views/curator/console/_source.html.erb` — chunk excerpt,
-     score, document name, link to chunk inspector
-     (`Curator::Engine.routes.url_helpers.knowledge_base_document_path(...)`
-     anchored to `#chunk-<id>`).
-   - `app/views/curator/console/_status.html.erb` — small badge
-     with three states (`idle` / `streaming` / `failed`).
-   - Request spec at `spec/requests/curator/console_spec.rb`:
-     - `GET /curator/console` renders the form with default-KB
-       defaults pre-filled.
-     - `GET /curator/kbs/:slug/console` renders form with that
-       KB's defaults.
-     - `POST /curator/console/run` (with a stubbed Asker that yields
-       fixed deltas via WebMock-stubbed RubyLLM):
-       - response is chunked (`Transfer-Encoding: chunked`).
-       - response body contains `<turbo-stream action="append">`
-         frames in delta order.
-       - response body ends with two `<turbo-stream action="replace">`
-         frames (sources + status badge).
-       - a `curator_retrievals` row was written with `status:
-         :success`, snapshot config matching the form params.
-     - Failure path: stubbed Asker raises `Curator::LLMError`;
-       response includes a `replace` frame to `console-status`
-       with the failed badge + error message; `curator_retrievals`
-       row is `:failed`.
-   - **Validate**: Console request spec green using a stub pump
-     (the no-op from Phase 1 still returns frames in test
-     environment via the StringIO substitute when the real pump
-     hasn't merged yet — adjust the spec helper accordingly).
-     Visit `/curator/console` in dummy app — form renders, submit
-     produces no errors but no streaming yet (pump still no-op).
 
 - [ ] **Phase 3 — Integration + end-to-end smoke.** Sequential.
    Runs after both 2A and 2B merge to main.

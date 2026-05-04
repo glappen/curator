@@ -1,2 +1,15 @@
-<%# Phase 1 skeleton. Phase 2B replaces with chunk excerpt + score + doc link. %>
-<p class="text-muted">Source partial lands in Phase 2B.</p>
+<article class="console-source">
+  <header class="console-source__head">
+    <span class="console-source__rank">[<%= hit.rank %>]</span>
+    <%= link_to hit.document_name,
+                "#{curator.knowledge_base_document_path(kb, hit.document_id)}#curator_chunk_#{hit.chunk_id}",
+                class: "console-source__title" %>
+    <% if hit.score %>
+      <span class="console-source__score"><%= format("%.3f", hit.score) %></span>
+    <% end %>
+  </header>
+  <% if hit.page_number.present? %>
+    <p class="console-source__meta">page <%= hit.page_number %></p>
+  <% end %>
+  <pre class="console-source__excerpt"><%= hit.text %></pre>
+</article>

@@ -1,2 +1,65 @@
-<%# Phase 1 skeleton. Phase 2B replaces with real form fields + chat_model dropdown. %>
-<p class="text-muted">Query form lands in Phase 2B.</p>
+<%# Console form. POSTs to /curator/console/run, which streams a
+    chunked text/vnd.turbo-stream.html response — Turbo applies the
+    `<turbo-stream>` frames as they arrive (data-turbo-stream="true"). %>
+<%= form_with url: curator.console_run_path,
+              method: :post,
+              data:   { turbo_stream: true },
+              class:  "form console-form" do |f| %>
+  <div class="field">
+    <%= f.label :knowledge_base_slug, "Knowledge base" %>
+    <%= f.select :knowledge_base_slug,
+                 knowledge_bases.map { |kb| [kb.name, kb.slug] },
+                 { selected: knowledge_base.slug } %>
+  </div>
+
+  <div class="field">
+    <%= f.label :query %>
+    <%= f.text_area :query, rows: 4, required: true,
+                    placeholder: "Ask a question..." %>
+  </div>
+
+  <fieldset class="console-form__overrides">
+    <legend>Per-run overrides</legend>
+
+    <div class="field">
+      <%= f.label :chunk_limit, "Chunk limit (top-K)" %>
+      <%= f.number_field :chunk_limit,
+                         min: 1,
+                         placeholder: knowledge_base.chunk_limit.to_s %>
+    </div>
+
+    <div class="field">
+      <%= f.label :similarity_threshold %>
+      <%= f.number_field :similarity_threshold,
+                         step: 0.01, min: 0, max: 1,
+                         placeholder: knowledge_base.similarity_threshold.to_s %>
+    </div>
+
+    <div class="field">
+      <%= f.label :strategy, "Retrieval strategy" %>
+      <%= f.select :strategy,
+                   Curator::ConsoleController::STRATEGIES.map { |s| [s.titleize, s] },
+                   { selected: knowledge_base.retrieval_strategy } %>
+    </div>
+
+    <div class="field">
+      <%= f.label :chat_model %>
+      <%= f.select :chat_model,
+                   grouped_options_for_select(chat_model_options, knowledge_base.chat_model) %>
+    </div>
+
+    <div class="field">
+      <%= f.label :system_prompt %>
+      <%= f.text_area :system_prompt, rows: 4,
+                      placeholder: knowledge_base.system_prompt.presence ||
+                                   "(KB default — leave blank to use)" %>
+    </div>
+  </fieldset>
+
+  <div class="form__actions">
+    <%= f.submit "Run", class: "btn btn--primary" %>
+    <%= link_to "Reset to KB defaults",
+                curator.knowledge_base_console_path(knowledge_base),
+                class: "btn" %>
+  </div>
+<% end %>

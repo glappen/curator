@@ -8,3 +8,5 @@ pin "controllers/curator/kb_switcher_controller",
     to: "controllers/curator/kb_switcher_controller.js", preload: true
 pin "controllers/curator/drag_drop_controller",
     to: "controllers/curator/drag_drop_controller.js", preload: true
+pin "controllers/curator/console_stream_controller",
+    to: "controllers/curator/console_stream_controller.js", preload: true

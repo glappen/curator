@@ -1,10 +1,13 @@
-<%# Console form. POSTs to /curator/console/run, which streams a
-    chunked text/vnd.turbo-stream.html response — Turbo applies the
-    `<turbo-stream>` frames as they arrive (data-turbo-stream="true"). %>
+<%# Console form. POSTs to /curator/console/run, which enqueues
+    Curator::ConsoleStreamJob. The job streams deltas back over the
+    Action Cable subscription that show.html.erb established with
+    `turbo_stream_from @topic` — the hidden `topic` field below
+    round-trips that UUID into the job. %>
 <%= form_with url: curator.console_run_path,
               method: :post,
-              data:   { turbo_stream: true },
               class:  "form console-form" do |f| %>
+  <%= f.hidden_field :topic, value: topic %>
+
   <div class="field">
     <%= f.label :knowledge_base_slug, "Knowledge base" %>
     <%= f.select :knowledge_base_slug,

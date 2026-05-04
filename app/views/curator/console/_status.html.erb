@@ -1,4 +1,4 @@
-<span class="console-status console-status--<%= state %>">
+<span class="badge console-status console-status--<%= state %>">
   <%= state.to_s.titleize %>
   <% if local_assigns[:message].present? %>
     <span class="console-status__message"><%= message %></span>

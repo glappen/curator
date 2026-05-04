@@ -1,62 +1,49 @@
 module Curator
   class ConsoleController < ApplicationController
-    include ActionController::Live
-
     STRATEGIES = %w[hybrid vector keyword].freeze
 
     def show
       @knowledge_base     = KnowledgeBase.resolve(params[:knowledge_base_slug])
       @knowledge_bases    = KnowledgeBase.order(:name, :id)
       @chat_model_options = build_chat_model_options(@knowledge_base.chat_model)
+      @topic              = SecureRandom.uuid
     end
 
-    # ActionController::Live action. Streams `<turbo-stream>` frames
-    # over a single chunked HTTP response: `append` per LLM delta into
-    # `console-answer`, then `replace` the sources panel and the status
-    # badge once Asker returns. On a Curator::Error, the answer frame
-    # ends partial and the status badge flips to :failed with the
-    # error message — caller saw whatever streamed before the raise.
+    # Form-submit endpoint. Enqueues a `Curator::ConsoleStreamJob` against
+    # the per-tab broadcast topic carried in the form's hidden `topic`
+    # field, then returns a small turbo-stream that flips the status
+    # badge to :streaming and clears the previous run's answer + sources
+    # panes. Token-by-token rendering happens via the Action Cable
+    # subscription that `console#show` set up with `turbo_stream_from`.
     def run
-      response.headers["Content-Type"]  = "text/vnd.turbo-stream.html"
-      response.headers["Cache-Control"] = "no-cache"
+      topic = params[:topic].to_s
+      raise ActionController::ParameterMissing, :topic if topic.blank?
 
-      Curator::Streaming::TurboStream.open(
-        stream: response.stream, target: "console-answer"
-      ) do |pump|
-        run_with_pump(pump)
-      end
+      ConsoleStreamJob.perform_later(
+        topic:                topic,
+        knowledge_base_slug:  params[:knowledge_base_slug],
+        query:                params[:query].to_s,
+        chunk_limit:          numeric_param(:chunk_limit),
+        similarity_threshold: float_param(:similarity_threshold),
+        strategy:             presence(params[:strategy]),
+        system_prompt:        presence(params[:system_prompt]),
+        chat_model:           presence(params[:chat_model])
+      )
+
+      # `update` (not `replace`): the status partial doesn't carry the
+      # `console-status` id on its root, so a `replace` would swap the
+      # wrapping div out and leave subsequent broadcasts targeting nothing.
+      # See ConsoleStreamJob for the matching note.
+      render turbo_stream: [
+        turbo_stream.update("console-status",
+                            partial: "status",
+                            locals:  { state: :streaming, message: nil }),
+        turbo_stream.update("console-answer",  ""),
+        turbo_stream.update("console-sources", "")
+      ]
     end
 
     private
-
-    # KB resolution happens *inside* the pump block so a bad slug
-    # (`ActiveRecord::RecordNotFound`) flips to a failed status frame
-    # instead of escaping `TurboStream.open` — escaping would skip the
-    # block-sugar `ensure pump.close` and leave the Live stream open
-    # until Rails times it out. `Curator::Error` covers Asker's
-    # retrieval/LLM failures; `RecordNotFound` covers the bad-slug
-    # case. Anything else (programmer error) keeps propagating.
-    def run_with_pump(pump)
-      kb = KnowledgeBase.resolve(params[:knowledge_base_slug])
-
-      answer = Curator::Asker.call(
-        params[:query].to_s,
-        knowledge_base: kb,
-        limit:          numeric_param(:chunk_limit),
-        threshold:      float_param(:similarity_threshold),
-        strategy:       presence(params[:strategy]),
-        system_prompt:  presence(params[:system_prompt]),
-        chat_model:     presence(params[:chat_model])
-      ) { |delta| pump.append(delta) }
-
-      pump.replace(target: "console-sources", html: render_sources(answer.sources, kb))
-      pump.replace(target: "console-status",  html: render_status(:done))
-    rescue Curator::Error, ActiveRecord::RecordNotFound => e
-      pump.replace(
-        target: "console-status",
-        html:   render_status(:failed, message: e.message)
-      )
-    end
 
     # Build the chat_model `<select>` source: every chat model RubyLLM
     # knows about, filtered to providers that have credentials configured
@@ -83,26 +70,6 @@ module Curator
       return grouped if already_listed
 
       { "(custom)" => [ [ current_model, current_model ] ] }.merge(grouped)
-    end
-
-    def render_sources(hits, kb)
-      return render_to_string(partial: "empty_sources", formats: [ :html ]) if hits.empty?
-
-      render_to_string(
-        partial:    "source",
-        collection: hits,
-        as:         :hit,
-        formats:    [ :html ],
-        locals:     { kb: kb }
-      )
-    end
-
-    def render_status(state, message: nil)
-      render_to_string(
-        partial: "status",
-        formats: [ :html ],
-        locals:  { state: state, message: message }
-      )
     end
 
     def numeric_param(key)

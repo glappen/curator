@@ -2,9 +2,10 @@
 
 Hotwire-only milestone. Ships an admin-mounted **Query Testing
 Console** (form + live-streaming answer + sources panel + per-run
-parameter overrides) and a reusable **token-streaming module**
-(`Curator::Streaming::TurboStream`) that future milestones (M8 chat
-UI) consume without changes.
+parameter overrides). Token streaming uses **Action Cable + Turbo
+broadcasts** (the same pattern RubyLLM's `bin/rails g ruby_llm:chat_ui`
+generates and `rubyllm.com/streaming` documents) so M8's chat UI shares
+the streaming code path.
 
 **Major spec amendment**: M6 drops the REST API surface entirely.
 The originally-planned `/api/query`, `/api/retrieve`, `/api/stream`
@@ -43,94 +44,94 @@ implementation.md as a living document — Phase 0 ships those edits.
    `spec/requests/curator/console_spec.rb`. Contract is locked for
    2A/2B fork. `bundle exec rspec` 599 examples / 0 failures;
    `bundle exec rubocop` no offenses.
-- [x] **Phase 2A — Streaming module real impl.** Worktree A
-   (`m6-streaming-module`). `Curator::Streaming::TurboStream`
-   replaces the no-op stubs with real frame writes:
-   `#append(text)` writes a `<turbo-stream action="append">` frame
-   with HTML-escaped body via `ERB::Util.html_escape`;
-   `#replace(target:, html:)` writes a `replace` frame with raw
-   (caller-trusted) HTML to an arbitrary target; `#close` is
-   idempotent and swallows `IOError` / `ActionController::Live::ClientDisconnected`
-   so a mid-stream client disconnect doesn't mask the original error.
-   `.open` block sugar re-raises block errors but always closes via
-   `ensure`. Both `target` attribute and `#append` body are
-   HTML-escaped (defense in depth — current callers pass static
-   gem-internal target strings, but the public kwarg signature is
-   reachable from future callers). Spec at
-   `spec/curator/streaming/turbo_stream_spec.rb` uses `StringIO`
-   and asserts exact frame bytes, body escape, target attribute
-   escape, in-order multi-frame writes, idempotent close,
-   close-error swallowing for both swallowed exception classes,
-   and block-error-with-still-closing for `.open`.
-   `bundle exec rspec` 609 examples / 0 failures;
-   `bundle exec rubocop` no offenses.
-- [x] **Phase 2B — Console UI + controller.** Worktree B (this branch).
-   `Curator::ConsoleController#show` resolves KB, exposes `@knowledge_bases`
-   for the selector, and builds `@chat_model_options` from
+- [x] **Phase 2A — Streaming module real impl.** *Superseded by Phase 2C
+   (see below).* Built `Curator::Streaming::TurboStream` pump against
+   `response.stream` with `<turbo-stream action="append">` frame writes,
+   ERB-escaped bodies, idempotent close swallowing IOError + ClientDisconnected,
+   and `.open` block sugar. Module + spec deleted along with `lib/curator/streaming/`.
+- [x] **Phase 2B — Console UI + controller.** Three-column
+   `show.html.erb`, `_form` (KB selector + chunk_limit /
+   similarity_threshold / strategy / chat_model grouped optgroups /
+   system_prompt / query inputs + Run + Reset-to-defaults link),
+   `_source` (rank + linked doc title anchored to `#curator_chunk_<id>` +
+   score + page + excerpt), `_status` (state badge + optional message),
+   `_empty_sources` partial. `ConsoleController#show` resolves KB, exposes
+   `@knowledge_bases`, builds `@chat_model_options` from
    `RubyLLM.models.chat_models` filtered to providers in
-   `RubyLLM::Provider.configured_providers(RubyLLM.config)`, grouped by
-   provider, with a `(custom)` group prepended when `kb.chat_model`
-   isn't in the registry. `#run` (`ActionController::Live`) sets
-   `text/vnd.turbo-stream.html` + `Cache-Control: no-cache`, opens
-   `Curator::Streaming::TurboStream` against `response.stream` targeting
-   `console-answer`, calls `Curator::Asker.call` with form-param overrides
-   (`limit` / `threshold` / `strategy` / `system_prompt` / `chat_model` —
-   blanks pass through as `nil`) and pumps deltas via `pump.append`,
-   then writes `replace` frames for `console-sources` (rendered
-   `_source` collection or `_empty_sources` when zero hits) and
-   `console-status` (done badge). On `Curator::Error` rescue: writes a
-   `replace` frame to `console-status` with the failed badge + message.
-   Real views: three-column `show.html.erb` with `<turbo-frame>`
-   targets, `_form` with KB selector + chunk_limit / similarity_threshold
-   / strategy / chat_model (grouped optgroups) / system_prompt / query
-   inputs + Run + Reset-to-defaults link, `_source` with rank + linked
-   doc title (anchored to `#curator_chunk_<id>`) + score + page +
-   excerpt, `_status` with state badge + optional message, new
-   `_empty_sources` partial. Request spec (`spec/requests/curator/console_spec.rb`)
-   covers GET top-level + nested KB form rendering, POST happy-path
-   chunked response + frame ordering + Asker kwargs wiring + blanks-as-nil,
-   POST failure path → failed status frame. Streaming pump is
-   substituted in-spec via `allow(...).to receive(:open)` with a
-   minimal real-frame writer so the spec passes against Phase 1's
-   no-op stubs and will keep passing after Phase 2A merges.
-   `bundle exec rspec` 604 examples / 0 failures; `bundle exec rubocop`
-   no offenses.
+   `RubyLLM::Provider.configured_providers(RubyLLM.config)` grouped by
+   provider, with a `(custom)` group prepended when `kb.chat_model` isn't
+   in the registry. `#run` originally used `ActionController::Live` +
+   chunked turbo-stream response (Phase 2A pump); rewritten in Phase 2C
+   to enqueue a job + return an initial turbo_stream — see below.
+- [x] **Phase 3 (chunked-HTTP smoke).** *Superseded by Phase 3C.*
+   `spec/requests/curator/console_smoke_spec.rb` asserted real
+   `<turbo-stream>` frame bytes, append-per-delta ordering, ERB-escape,
+   then sources + status replace frames, plus the snapshot
+   `curator_retrievals` row. Spec deleted; equivalent assertions moved
+   onto the broadcast surface in Phase 3C.
+- [x] **Phase 2C — Cable broadcasts pivot.** Phase 2A's chunked-HTTP
+   path didn't actually stream in browsers: Turbo's form-submit flow
+   awaits the full response body via `FetchResponse#responseHTML`
+   (`response.clone().text()`) before applying any `<turbo-stream>`
+   elements (verified against turbo.js 8.0.23). Confirmed via curl that
+   the server streams correctly and via browser that Turbo buffers
+   regardless. Pivoted to the canonical RubyLLM-Rails pattern:
+   `<%= turbo_stream_from @topic %>` in `show`, per-tab UUID round-tripped
+   through a hidden `topic` field, `#run` enqueues
+   `Curator::ConsoleStreamJob` and returns an initial turbo_stream that
+   flips status to `:streaming` and clears the previous run's panes;
+   the job calls `Curator::Asker` and broadcasts each delta via
+   `Turbo::StreamsChannel.broadcast_append_to(topic, target: "console-answer")`,
+   then sources + done-status replace broadcasts. Failures
+   (`Curator::Error` / `RecordNotFound`) become a single `:failed`
+   status broadcast. Deleted: `lib/curator/streaming/turbo_stream.rb` +
+   spec, `ActionController::Live` from `ConsoleController`, the
+   chunked-response headers, and `console-frame` markup (replaced with
+   plain `<div>` targets since `broadcast_append_to` only needs a DOM id).
+- [x] **Phase 3C — Integration + end-to-end smoke (automated).**
+   `spec/jobs/curator/console_stream_job_spec.rb` drives the job
+   top-to-bottom against the dummy app: `Curator.ingest sample.md`
+   (real ingest + embed jobs against the default WebMock embeddings
+   stub) → `Curator::ConsoleStreamJob.perform_now` → real
+   `Curator::Asker` → RubyLLM `/chat/completions` stubbed at the SSE
+   wire via `stub_chat_completion_stream(deltas: [...])`. Asserts the
+   broadcast sequence (streaming-status → one append per delta in
+   order with ERB-escape → sources → done-status), the persisted
+   `Curator::Retrieval` row finalizes with the operator-submitted
+   snapshot config (`chunk_limit: 3`, `similarity_threshold: 0.0`,
+   `retrieval_strategy: "vector"`, `chat_model: "gpt-5-mini"`),
+   linked `chat_id` / `message_id`, the `streamed: true` `llm_call`
+   trace step, and the assistant Message persisted with concatenated
+   deltas. Failure paths covered: Asker raise → streaming + failed
+   status frames only, no append/sources; unknown slug → failed
+   status frame. Tagged `:broadcasts` to opt past the suite-level
+   `Turbo::Broadcastable` suppression. Dashboard recent-activity feed
+   regression note (per Q6) preserved: row stays a normal
+   `Curator::Retrieval` with no `origin` column.
 
 ## Current Work
 
-_(empty — promote a phase from Next Steps when starting)_
+_(empty — manual visual QA in the dummy app is the only remaining
+checklist item; see Next Steps)_
 
 ## Next Steps
 
-- [ ] **Phase 3 — Integration + end-to-end smoke.** Sequential.
-   Runs after both 2A and 2B merge to main.
-   - Verify the no-op pump from Phase 1 has been replaced by the
-     real implementation from 2A — no merge conflict expected
-     (2B's controller calls `Curator::Streaming::TurboStream.open`
-     which now resolves to the real impl).
-   - End-to-end request spec
-     (`spec/requests/curator/console_smoke_spec.rb`):
-     - Real form submission → real `Curator::Streaming::TurboStream`
-       pump → stubbed RubyLLM streaming yields fixed deltas →
-       assert real `<turbo-stream>` frames in chunked response,
-       in order, with correct escape behavior.
-     - `curator_retrievals` row present with snapshot config and
-       `status: :success`.
-     - The Console run shows up on the dashboard's recent activity
-       feed (cross-feature regression).
-   - Manual visual QA in dummy app:
-     - `bin/rails s` from `spec/dummy`.
-     - Hit `/curator/console`. Pick a KB, type a query, hit Run.
-     - Tokens stream into the center column visibly.
-     - Sources populate in the right column after the LLM finishes.
-     - Status badge transitions idle → streaming → done.
-     - Tweak the threshold, hit Run again — new run uses the
-       overridden value (verify via `curator_retrievals.last`
-       snapshot columns in `bin/rails c`).
-     - Force a failure (point the KB at a bogus chat_model) — UI
-       shows the failed badge with a readable error message.
-   - **Validate**: full spec suite green; rubocop clean; visual
-     smoke checklist above passes.
+- [ ] **Manual visual QA in dummy app.** Out-of-band, requires
+   running `bin/rails s` from `spec/dummy` and exercising
+   `/curator/console` in a browser. The automated smoke
+   (`spec/requests/curator/console_smoke_spec.rb`) covers wire
+   shape + persistence + frame ordering — this checklist covers
+   the things only a real browser sees.
+   - Hit `/curator/console`. Pick a KB, type a query, hit Run.
+   - Tokens stream into the center column visibly (not buffered
+     until the end).
+   - Sources populate in the right column after the LLM finishes.
+   - Status badge transitions idle → streaming → done.
+   - Tweak the threshold, hit Run again — new run uses the
+     overridden value (verify via `Curator::Retrieval.last`
+     snapshot columns in `bin/rails c`).
+   - Force a failure (point the KB at a bogus chat_model) — UI
+     shows the failed badge with a readable error message.
 
 ## Validation Strategy
 
@@ -160,28 +161,29 @@ Each phase has its own bullet-level validation above. Common bar:
 
 ```
 config/
-  routes.rb                                       # Phase 1: add console routes
-lib/curator.rb                                    # Phase 1: require streaming module
+  routes.rb                                       # console routes
+lib/curator.rb                                    # require list
 lib/curator/
-  configuration.rb                                # Phase 0: drop authenticate_api_with
-  authentication.rb                               # Phase 0: drop :api branch
-  streaming/
-    turbo_stream.rb                               # Phase 1: skeleton; Phase 2A: real impl
+  configuration.rb                                # Phase 0: dropped authenticate_api_with
+  authentication.rb                               # Phase 0: dropped :api branch
+  streaming/                                      # Phase 2A: deleted in Phase 2C
 lib/generators/curator/install/templates/
-  curator.rb.tt                                   # Phase 0: drop authenticate_api_with example
+  curator.rb.tt                                   # Phase 0: dropped authenticate_api_with example
 app/controllers/curator/
-  api/                                            # Phase 0: DELETE entire dir
-  console_controller.rb                           # Phase 1: skeleton; Phase 2B: real
+  api/                                            # Phase 0: deleted
+  console_controller.rb                           # #show resolves KB + topic; #run enqueues job
+app/jobs/curator/
+  console_stream_job.rb                           # Phase 2C: streams broadcasts to per-tab topic
 app/views/curator/console/
-  show.html.erb                                   # Phase 1: skeleton; Phase 2B: real
-  _form.html.erb                                  # Phase 1: skeleton; Phase 2B: real
-  _source.html.erb                                # Phase 1: skeleton; Phase 2B: real
-  _status.html.erb                                # Phase 1: skeleton; Phase 2B: real
-spec/curator/streaming/
-  turbo_stream_spec.rb                            # Phase 1: skeleton; Phase 2A: real
+  show.html.erb                                   # turbo_stream_from @topic + form
+  _form.html.erb                                  # hidden topic field + KB form
+  _source.html.erb                                # source card
+  _status.html.erb                                # state badge
+  _empty_sources.html.erb                         # zero-hits placeholder
+spec/jobs/curator/
+  console_stream_job_spec.rb                      # Phase 3C: end-to-end via broadcasts ✓
 spec/requests/curator/
-  console_spec.rb                                 # Phase 1: skeleton; Phase 2B: real
-  console_smoke_spec.rb                           # Phase 3: end-to-end
+  console_spec.rb                                 # GET form + POST enqueue/initial frame
 features/
   implementation.md                               # Phase 0: spec amendments
 ```
@@ -267,15 +269,21 @@ build against — locking signatures upfront prevents the most
 expensive class of merge conflict (rewriting a method's
 parameters across two branches).
 
-**Why `ActionController::Live` over ActionCable broadcasts**:
-Console runs are 1:1 (one operator, one browser tab, one query).
-ActionCable's value is fan-out to many subscribers — wasted here.
-Live + chunked Turbo Stream response gives single HTTP req/resp,
-no subscription/teardown lifecycle, no per-run channel naming, no
-orphaned subscriptions if the operator navigates away mid-stream
-(disconnect just kills the stream and the controller's `ensure`
-block runs). The cable adapter is still required (M5 admin
-broadcasts), just not for token streaming. See Ideation Notes Q6.
+**Why ActionCable broadcasts over `ActionController::Live`** (reversed
+in Phase 2C). The original Q7 decision picked Live + chunked
+turbo-stream response on the theory that 1:1 console runs don't need
+Cable's fan-out. That premise was correct *but irrelevant*: Turbo's
+form-submission flow buffers the full response body
+(`FetchResponse#responseHTML` calls `response.clone().text()`, verified
+against turbo.js 8.0.23) before applying any `<turbo-stream>` elements,
+so chunked responses don't render progressively in the browser. The
+working paths are SSE, ActionCable broadcasts, or a custom Stimulus
+controller that consumes `response.body.getReader()` and calls
+`Turbo.renderStreamMessage` per frame. Cable broadcasts are RubyLLM's
+documented pattern (`rubyllm.com/streaming`, `bin/rails g
+ruby_llm:chat_ui`), already required for M5 admin broadcasts, and
+share a single streaming code path with M8. Per-tab topic isolation
+is handled with a UUID round-tripped through the form's hidden field.
 
 **Why drop the API**: see Ideation Notes Q3 for the full reasoning.
 The shortest version: the gem mounts in a Rails host that already
@@ -330,11 +338,14 @@ Q&A from the ideation session that produced this file (2026-05-02):
   run (operator overrides flow into the snapshot, not the KB's
   saved defaults). Operator probing flows into M7 evals naturally.
   No `origin` column.
-- **Q7: Streaming transport (Turbo flavor)**. **B —
-  `ActionController::Live` + chunked `text/vnd.turbo-stream.html`
-  response.** Single HTTP request per query. ActionCable not used
-  for token streaming (still used for M5 admin broadcasts elsewhere).
-  Console runs are 1:1; ActionCable's fan-out value is wasted here.
-  Cleanly parallelizes (the streaming module is a thin wrapper
-  around `response.stream.write`; the Console UI worktree builds
-  against a stub).
+- **Q7: Streaming transport (Turbo flavor)**. **Reversed in Phase 2C:
+  ActionCable broadcasts**, not chunked `ActionController::Live`. The
+  original Live decision didn't survive contact with the browser —
+  Turbo 8.x's form-submit flow awaits the full response body via
+  `FetchResponse#responseHTML` before applying any `<turbo-stream>`
+  elements (turbo.js:499–504), so chunked frames buffer client-side
+  even when the server streams them perfectly. Cable broadcasts (the
+  pattern `bin/rails g ruby_llm:chat_ui` generates) actually stream
+  progressively, share infrastructure with M5 admin broadcasts and
+  M8's chat UI, and add only a per-tab UUID + a job class to the
+  blast radius.

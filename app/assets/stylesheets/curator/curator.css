@@ -625,6 +625,123 @@
   margin: 0;
 }
 
+/* ---- Console (M6) ---- */
+.curator-ui .console-shell {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr) minmax(280px, 360px);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .curator-ui .console-shell {
+    grid-template-columns: 1fr;
+  }
+}
+
+.curator-ui .console-shell__form,
+.curator-ui .console-shell__answer,
+.curator-ui .console-shell__sources {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-sm);
+}
+
+.curator-ui .console-shell__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.curator-ui .console-shell__head h2 {
+  margin: 0;
+}
+
+.curator-ui .console-form__overrides {
+  background: var(--color-surface-alt);
+}
+
+.curator-ui .console-answer {
+  display: block;
+  min-height: 12rem;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  white-space: pre-wrap;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+}
+
+.curator-ui .console-sources {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.curator-ui .console-source {
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+}
+
+.curator-ui .console-source__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.curator-ui .console-source__rank {
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.curator-ui .console-source__title {
+  flex: 1 1 auto;
+  font-weight: 500;
+}
+
+.curator-ui .console-source__score {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.curator-ui .console-source__meta {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.curator-ui .console-source__excerpt {
+  margin: 0;
+}
+
+/* ---- Console status badge (M6) ----
+   Composes with .badge for the pill shape; the modifier class drives
+   the color variant. State names (idle / streaming / done / failed)
+   are also asserted by spec/requests/curator/console_smoke_spec.rb,
+   so don't rename without updating the spec. */
+.curator-ui .console-status              { background: var(--color-neutral-bg); color: var(--color-neutral); }
+.curator-ui .console-status--idle        { background: var(--color-neutral-bg); color: var(--color-neutral); }
+.curator-ui .console-status--streaming   { background: var(--color-accent-soft); color: var(--color-accent); }
+.curator-ui .console-status--done        { background: var(--color-success-bg); color: var(--color-success); }
+.curator-ui .console-status--failed      { background: var(--color-danger-bg);  color: var(--color-danger); }
+
+.curator-ui .console-status__message {
+  margin-left: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  opacity: 0.8;
+}
+
 /* ---- Pagination (Phase 6) ---- */
 .curator-ui .pagination {
   display: flex;

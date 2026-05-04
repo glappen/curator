@@ -1,25 +1,36 @@
 <h1>Query Testing Console</h1>
 
+<%# Per-tab broadcast topic. Action Cable subscription is established once
+    here; the form's hidden field round-trips the same UUID so
+    Curator::ConsoleStreamJob broadcasts back into this tab and not any
+    other. Refreshing the page mints a new topic. %>
+<%= turbo_stream_from @topic %>
+
 <div class="console-shell">
   <section class="console-shell__form">
     <%= render "form",
                knowledge_base:     @knowledge_base,
                knowledge_bases:    @knowledge_bases,
-               chat_model_options: @chat_model_options %>
+               chat_model_options: @chat_model_options,
+               topic:              @topic %>
   </section>
 
   <section class="console-shell__answer">
     <header class="console-shell__head">
       <h2>Answer</h2>
-      <turbo-frame id="console-status">
+      <div id="console-status">
         <%= render "status", state: :idle, message: nil %>
-      </turbo-frame>
+      </div>
     </header>
-    <turbo-frame id="console-answer" class="console-answer"></turbo-frame>
+    <%# `console-stream` Stimulus controller reorders streamed answer
+        chunks by `data-seq` — Action Cable's pubsub does not guarantee
+        in-order delivery on a single stream, so spans can land out of
+        order. See `app/javascript/controllers/curator/console_stream_controller.js`. %>
+    <div id="console-answer" class="console-answer" data-controller="console-stream"></div>
   </section>
 
   <section class="console-shell__sources">
     <h2>Sources</h2>
-    <turbo-frame id="console-sources" class="console-sources"></turbo-frame>
+    <div id="console-sources" class="console-sources"></div>
   </section>
 </div>

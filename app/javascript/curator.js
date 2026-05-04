@@ -12,10 +12,12 @@
 import { Application } from "@hotwired/stimulus"
 import KbSwitcherController from "controllers/curator/kb_switcher_controller"
 import DragDropController from "controllers/curator/drag_drop_controller"
+import ConsoleStreamController from "controllers/curator/console_stream_controller"
 
 const application = Application.start()
 application.debug = false
 application.register("kb-switcher", KbSwitcherController)
 application.register("curator--drag-drop", DragDropController)
+application.register("console-stream", ConsoleStreamController)
 
 export { application }

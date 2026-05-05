@@ -48,6 +48,7 @@ module Curator
         "[ConsoleStreamJob] asker done deltas=#{delta_count} sources=#{answer.sources.size}"
       )
       broadcast_sources(topic, answer.sources, kb)
+      broadcast_evaluation_widget(topic, answer.retrieval_id) if answer.retrieval_id
       broadcast_status(topic, state: :done)
       Rails.logger.info("[ConsoleStreamJob] complete topic=#{topic}")
     rescue Curator::Error, ActiveRecord::RecordNotFound => e
@@ -88,6 +89,19 @@ module Curator
         target:  "console-status",
         partial: "curator/console/status",
         locals:  { state: state, message: message }
+      )
+    end
+
+    # Post-success eval surface: M7 Phase 2's inline thumbs widget.
+    # Skipped on `:failed` runs (the `rescue` paths return before
+    # we reach this point) so a broken run doesn't sprout a rating
+    # form against a row that may not even have a usable answer.
+    def broadcast_evaluation_widget(topic, retrieval_id)
+      Turbo::StreamsChannel.broadcast_update_to(
+        topic,
+        target:  "console-evaluation",
+        partial: "curator/console/evaluation",
+        locals:  { retrieval_id: retrieval_id }
       )
     end
 

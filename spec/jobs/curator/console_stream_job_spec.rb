@@ -77,12 +77,37 @@ RSpec.describe Curator::ConsoleStreamJob, :broadcasts, type: :job do
     expect(append_frames[3]).to     include(%(<span data-seq="4">&lt;marker&gt; [1].</span>))
     expect(append_frames[3]).not_to include("<marker>")
 
-    # Penultimate / last: sources update, then done status update.
+    # Tail-end ordering: sources update → eval-widget update → done status.
     update_targets = payloads.join.scan(/action="update" target="(console-[a-z]+)"/).flatten
-    expect(update_targets.first).to eq("console-status")  # streaming
-    expect(update_targets.last(2)).to eq(%w[console-sources console-status])
-    expect(payloads.last).to include("console-status--done")
-    expect(payloads[-2]).to  include("sample.md")
+    expect(update_targets.first).to eq("console-status") # streaming
+    expect(update_targets.last(3)).to eq(%w[console-sources console-evaluation console-status])
+    expect(payloads.last).to  include("console-status--done")
+    expect(payloads[-2]).to   include("console-evaluation")
+    expect(payloads[-2]).to   include("/curator/evaluations") # form action
+    expect(payloads[-3]).to   include("sample.md")
+  end
+
+  it "broadcasts the evaluation widget bound to the persisted retrieval id on done" do
+    stub_chat_completion_stream(deltas: deltas)
+
+    described_class.perform_now(
+      topic:                topic,
+      knowledge_base_slug:  "default",
+      query:                "Sample Markdown",
+      chunk_limit:          3,
+      similarity_threshold: 0.0,
+      strategy:             "vector"
+    )
+
+    row      = Curator::Retrieval.sole
+    stream   = Turbo::StreamsChannel.send(:stream_name_from, topic)
+    payloads = ActionCable.server.pubsub.broadcasts(stream).map { |p| JSON.parse(p) }
+    eval_frame = payloads.find { |p| p.include?('target="console-evaluation"') }
+
+    expect(eval_frame).to     be_present
+    expect(eval_frame).to     include('action="update"')
+    expect(eval_frame).to     include(%(value="#{row.id}")) # retrieval_id hidden field
+    expect(eval_frame).to     include("console-evaluation#setRating")
   end
 
   it "persists a successful Curator::Retrieval row with the submitted snapshot config" do
@@ -134,6 +159,7 @@ RSpec.describe Curator::ConsoleStreamJob, :broadcasts, type: :job do
     expect(payloads.last).to                        include("stubbed LLM blew up")
     expect(payloads.any? { |p| p.include?("append") }).to be false
     expect(payloads.any? { |p| p.include?("console-sources") }).to be false
+    expect(payloads.any? { |p| p.include?("console-evaluation") }).to be false
   end
 
   it "broadcasts a failed status frame when the slug is unknown" do

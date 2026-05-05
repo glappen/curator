@@ -27,6 +27,11 @@
         in-order delivery on a single stream, so spans can land out of
         order. See `app/javascript/controllers/curator/console_stream_controller.js`. %>
     <div id="console-answer" class="console-answer" data-controller="console-stream"></div>
+
+    <%# M7 Phase 2 — Curator::ConsoleStreamJob fills this slot on `:done`
+        with the thumbs widget; clicking either thumb returns a
+        turbo_stream that swaps in the rating-aware evaluations form. %>
+    <div id="console-evaluation" class="console-evaluation-slot"></div>
   </section>
 
   <section class="console-shell__sources">

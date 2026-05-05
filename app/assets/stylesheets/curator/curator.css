@@ -812,6 +812,52 @@
   opacity: 0.8;
 }
 
+/* ---- Console inline evaluation widget (M7 Phase 2) ----
+   Slot lives inside `.console-shell__answer`, directly under the
+   answer text. Empty until ConsoleStreamJob's :done broadcast fills
+   it; the margin only applies once the slot has children so the
+   answer column doesn't grow before the run completes. */
+.curator-ui .console-evaluation-slot:not(:empty) {
+  margin-top: var(--space-4);
+}
+
+.curator-ui .console-evaluation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.curator-ui .console-evaluation__thumbs {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.curator-ui .console-evaluation .form__actions {
+  margin-top: var(--space-3);
+}
+
+/* Category checkbox rows: each label wraps its checkbox + the
+   titleized name, so render them as inline-flex rows stacked
+   vertically. Override `.form label`'s default block-flow display
+   so the checkbox sits next to its text instead of above it. */
+.curator-ui .console-evaluation__categories {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.curator-ui .console-evaluation__categories label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 400;
+  cursor: pointer;
+}
+
 /* ---- Pagination (Phase 6) ---- */
 .curator-ui .pagination {
   display: flex;

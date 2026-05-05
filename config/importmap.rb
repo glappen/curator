@@ -10,3 +10,5 @@ pin "controllers/curator/drag_drop_controller",
     to: "controllers/curator/drag_drop_controller.js", preload: true
 pin "controllers/curator/console_stream_controller",
     to: "controllers/curator/console_stream_controller.js", preload: true
+pin "controllers/curator/console_evaluation_controller",
+    to: "controllers/curator/console_evaluation_controller.js", preload: true

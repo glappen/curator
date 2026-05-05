@@ -1,0 +1,65 @@
+<%# Rating-aware annotation form. Replaces the initial thumbs widget
+    after the operator picks 👍/👎. Subsequent submits round-trip the
+    persisted row's id through the hidden `evaluation_id` field, which
+    routes through Curator::EvaluationsController#create's "update in
+    place" branch — same row, no second eval row.
+
+    Clicking the *other* thumb after a rating is already set flips
+    rating in place via the `console-evaluation` Stimulus controller
+    (set hidden field, submit form). The server's turbo_stream
+    response re-renders this partial in :positive / :negative shape.
+
+    locals: evaluation %>
+<%= form_with url:   curator.evaluations_path,
+              method: :post,
+              class: "form console-evaluation console-evaluation--expanded",
+              data:  { controller:                  "console-evaluation",
+                       "console-evaluation-target": "form" } do |f| %>
+  <%= f.hidden_field :retrieval_id,  value: evaluation.retrieval_id %>
+  <%= f.hidden_field :evaluation_id, value: evaluation.id %>
+  <%= f.hidden_field :rating, value: evaluation.rating,
+                     data: { "console-evaluation-target": "rating" } %>
+
+  <div class="console-evaluation__thumbs">
+    <button type="button"
+            class="btn btn--thumb <%= "is-active" if evaluation.rating == "positive" %>"
+            data-action="console-evaluation#setRating"
+            data-console-evaluation-rating-param="positive"
+            aria-label="Rate positive"
+            aria-pressed="<%= evaluation.rating == "positive" %>">👍</button>
+    <button type="button"
+            class="btn btn--thumb <%= "is-active" if evaluation.rating == "negative" %>"
+            data-action="console-evaluation#setRating"
+            data-console-evaluation-rating-param="negative"
+            aria-label="Rate negative"
+            aria-pressed="<%= evaluation.rating == "negative" %>">👎</button>
+  </div>
+
+  <div class="field">
+    <%= f.label :feedback %>
+    <%= f.text_area :feedback, value: evaluation.feedback, rows: 3 %>
+  </div>
+
+  <% if evaluation.rating == "negative" %>
+    <div class="field">
+      <%= f.label :ideal_answer, "Ideal answer" %>
+      <%= f.text_area :ideal_answer, value: evaluation.ideal_answer, rows: 4 %>
+    </div>
+
+    <fieldset class="field console-evaluation__categories">
+      <legend>Failure categories</legend>
+      <% Curator::Evaluation::FAILURE_CATEGORIES.each do |cat| %>
+        <label title="<%= Curator::Evaluation::FAILURE_CATEGORY_TOOLTIPS.fetch(cat) %>">
+          <%= check_box_tag "failure_categories[]",
+                            cat,
+                            Array(evaluation.failure_categories).include?(cat) %>
+          <%= cat.titleize %>
+        </label>
+      <% end %>
+    </fieldset>
+  <% end %>
+
+  <div class="form__actions">
+    <%= f.submit "Save evaluation", class: "btn btn--primary" %>
+  </div>
+<% end %>

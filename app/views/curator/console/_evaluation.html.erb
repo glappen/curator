@@ -1,0 +1,31 @@
+<%# Initial post-run thumbs widget. Broadcast into `#console-evaluation`
+    by Curator::ConsoleStreamJob on `:done`. Either thumb sets the
+    hidden `rating` field via the `console-evaluation` Stimulus
+    controller and submits the form; the controller responds with a
+    turbo_stream that swaps this partial out for the rating-aware
+    `curator/evaluations/_form` partial.
+
+    locals: retrieval_id %>
+<%= form_with url:   curator.evaluations_path,
+              method: :post,
+              class: "form console-evaluation",
+              data:  { controller:                       "console-evaluation",
+                       "console-evaluation-target":      "form" } do |f| %>
+  <%= f.hidden_field :retrieval_id, value: retrieval_id %>
+  <%= f.hidden_field :rating, value: "",
+                     data: { "console-evaluation-target": "rating" } %>
+
+  <p class="console-evaluation__prompt">How was this answer?</p>
+  <div class="console-evaluation__thumbs">
+    <button type="button"
+            class="btn btn--thumb"
+            data-action="console-evaluation#setRating"
+            data-console-evaluation-rating-param="positive"
+            aria-label="Rate positive">👍</button>
+    <button type="button"
+            class="btn btn--thumb"
+            data-action="console-evaluation#setRating"
+            data-console-evaluation-rating-param="negative"
+            aria-label="Rate negative">👎</button>
+  </div>
+<% end %>

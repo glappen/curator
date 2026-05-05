@@ -71,6 +71,7 @@ RSpec.describe "Curator::EvaluationsController", type: :request do
       }.not_to change(Curator::Evaluation, :count)
 
       original.reload
+      expect(response).to           have_http_status(:ok)
       expect(original.rating).to    eq("negative")
       expect(original.feedback).to  eq("rewrote")
     end
@@ -110,6 +111,91 @@ RSpec.describe "Curator::EvaluationsController", type: :request do
       }.not_to change(Curator::Evaluation, :count)
 
       expect(response).to have_http_status(:bad_request)
+    end
+  end
+
+  describe "POST /curator/evaluations (turbo_stream)" do
+    let(:turbo_headers) do
+      { "Accept" => "text/vnd.turbo-stream.html, text/html, application/xhtml+xml" }
+    end
+
+    it "returns a turbo_stream update for #console-evaluation with the rating-aware form" do
+      post "/curator/evaluations",
+           params:  { retrieval_id: retrieval.id, rating: "negative" },
+           headers: turbo_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.media_type).to eq(Mime[:turbo_stream].to_s)
+
+      evaluation = Curator::Evaluation.sole
+      expect(response.body).to include('action="update"')
+      expect(response.body).to include('target="console-evaluation"')
+      # Hidden round-trip field for the next submit.
+      expect(response.body).to include(%(name="evaluation_id"))
+      expect(response.body).to include(%(value="#{evaluation.id}"))
+      # Negative rating reveals the failure-categories fieldset.
+      expect(response.body).to include("failure_categories")
+      expect(response.body).to include("hallucination")
+    end
+
+    it "renders the positive variant without failure categories" do
+      post "/curator/evaluations",
+           params:  { retrieval_id: retrieval.id, rating: "positive" },
+           headers: turbo_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to     include('target="console-evaluation"')
+      expect(response.body).not_to include("failure_categories")
+    end
+
+    it "flips a :negative eval (with categories) to :positive in place" do
+      original = Curator.evaluate(
+        retrieval:          retrieval,
+        rating:             :negative,
+        evaluator_role:     :reviewer,
+        failure_categories: %w[hallucination]
+      )
+
+      # Mirrors the Stimulus flip path: client clears the checkboxes
+      # before submit when rating goes :negative -> :positive, so the
+      # server sees an empty failure_categories array (or no key).
+      expect {
+        post "/curator/evaluations",
+             params:  {
+               retrieval_id:  retrieval.id,
+               evaluation_id: original.id,
+               rating:        "positive"
+             },
+             headers: turbo_headers
+      }.not_to change(Curator::Evaluation, :count)
+
+      expect(response).to                    have_http_status(:ok)
+      expect(original.reload.rating).to      eq("positive")
+      expect(original.failure_categories).to eq([])
+    end
+
+    it "PATCHes the same row when evaluation_id is present" do
+      original = Curator.evaluate(
+        retrieval:      retrieval,
+        rating:         :positive,
+        evaluator_role: :reviewer
+      )
+
+      expect {
+        post "/curator/evaluations",
+             params:  {
+               retrieval_id:  retrieval.id,
+               evaluation_id: original.id,
+               rating:        "negative",
+               feedback:      "actually no"
+             },
+             headers: turbo_headers
+      }.not_to change(Curator::Evaluation, :count)
+
+      original.reload
+      expect(original.rating).to     eq("negative")
+      expect(original.feedback).to   eq("actually no")
+      expect(response.body).to       include(%(value="#{original.id}"))
     end
   end
 end

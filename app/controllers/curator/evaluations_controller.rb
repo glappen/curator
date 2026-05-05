@@ -2,9 +2,16 @@ module Curator
   # Admin write endpoint for `Curator::Evaluation`. Both create + update
   # land on `#create`: the form posts with a hidden `evaluation_id`
   # field on subsequent submits, which routes through the same action
-  # and updates the existing row in place. Phase 2 layers a turbo-stream
-  # response on top; Phase 1 returns the persisted row as JSON so the
-  # Stimulus controller can stash the id for the next submit.
+  # and updates the existing row in place.
+  #
+  # Two response shapes:
+  #   * Turbo Stream — Phase 2 Console flow. Returns a single
+  #     `turbo_stream.update("console-evaluation", ...)` that swaps the
+  #     thumbs widget (or its prior expanded form) for a freshly
+  #     rendered rating-aware form bound to the persisted row.
+  #   * JSON — Phase 1 / programmatic callers. Returns
+  #     `{ id:, rating: }` so the caller can stash the id for the next
+  #     update submit.
   #
   # v1 has no per-evaluator authorization on update — any admin who
   # passes the `authenticate_admin_with` hook can PATCH any other
@@ -23,7 +30,19 @@ module Curator
         evaluation_id:      param_or_nil(:evaluation_id)
       )
 
-      render json: { id: evaluation.id, rating: evaluation.rating }, status: :created
+      if request.format.turbo_stream?
+        render turbo_stream: turbo_stream.update(
+          "console-evaluation",
+          partial: "curator/evaluations/form",
+          locals:  { evaluation: evaluation }
+        )
+      else
+        # 200 on update, 201 on create — the JSON contract has to
+        # distinguish the two for programmatic callers, since the route
+        # collapses both onto POST.
+        status = param_or_nil(:evaluation_id) ? :ok : :created
+        render json: { id: evaluation.id, rating: evaluation.rating }, status: status
+      end
     end
 
     private

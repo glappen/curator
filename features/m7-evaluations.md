@@ -55,9 +55,56 @@ edits.
     documented both hooks with commented-out examples.
   - Validate: 625 examples, 0 failures; rubocop no offenses.
 
+- **Phase 2 — Console inline thumbs flow.** ✓
+  - `app/jobs/curator/console_stream_job.rb` — added
+    `broadcast_evaluation_widget` after `broadcast_sources` and
+    before the final `:done` status frame; skipped on `:failed`
+    (rescue paths return before reaching it). Uses `answer.retrieval_id`
+    so the widget is bound to the persisted row.
+  - `app/views/curator/console/show.html.erb` — added
+    `<section class="console-shell__evaluation"><div id="console-evaluation"></div></section>`
+    slot for the broadcast to land in.
+  - `app/views/curator/console/_evaluation.html.erb` — initial
+    thumbs widget (👍 / 👎 + hidden `retrieval_id` + hidden empty
+    `rating`), Stimulus-wired so a thumb click sets the rating and
+    submits the form.
+  - `app/views/curator/evaluations/_form.html.erb` — rating-aware
+    expansion. Both rating thumbs remain present in the expanded
+    form so an operator can flip rating in place without re-running
+    the query. Hidden `evaluation_id` round-trips to route the next
+    submit through the in-place update branch. `:negative` reveals
+    `ideal_answer` + multi-select `failure_categories` with hover
+    tooltips wired from `FAILURE_CATEGORY_TOOLTIPS`.
+  - `app/javascript/controllers/curator/console_evaluation_controller.js`
+    — Stimulus controller with `form` + `rating` targets and a
+    `setRating(event)` action that writes the chosen rating into
+    the hidden field and calls `requestSubmit()`. Buttons stay
+    `type="button"` so submitter-vs-hidden-field param-order
+    surprises don't bite.
+  - `app/javascript/curator.js` + `config/importmap.rb` — register
+    + pin the new controller.
+  - `app/controllers/curator/evaluations_controller.rb` — added a
+    Turbo Stream branch that returns
+    `turbo_stream.update("console-evaluation", partial: "curator/evaluations/form", locals: { evaluation: })`.
+    JSON branch unchanged for the Phase 1 callers.
+  - Specs:
+    - `spec/jobs/curator/console_stream_job_spec.rb` — updated the
+      tail-ordering assertion to expect
+      `[console-sources, console-evaluation, console-status]`; new
+      example asserts the eval frame carries the persisted retrieval
+      id + `setRating` Stimulus action; failed-asker example asserts
+      no `console-evaluation` broadcast lands.
+    - `spec/requests/curator/evaluations_spec.rb` — new section
+      under `POST /curator/evaluations (turbo_stream)` covers
+      :negative (categories visible), :positive (categories hidden),
+      and the `evaluation_id` in-place update path. Verified
+      `response.media_type == Mime[:turbo_stream]`.
+  - Validate: 630 examples, 0 failures; rubocop no offenses.
+
 ## Current Work
 
-_(empty — Phase 1 done; Phase 2 next)_
+_(empty — Phase 2 done; Phase 3 (Retrievals tab) and Phase 4
+(Evaluations tab) can run in parallel worktrees next.)_
 
 ## Next Steps
 
@@ -130,7 +177,7 @@ _(empty — Phase 1 done; Phase 2 next)_
    - **Validate**: `bundle exec rspec` 0 failures; `bundle exec rubocop`
      no offenses.
 
-- [ ] **Phase 2 — Console inline thumbs flow.** Wire Q2-D + Q3-D + Q8-D
+- [x] **Phase 2 — Console inline thumbs flow.** Wire Q2-D + Q3-D + Q8-D
    into the existing Console.
    - `Curator::ConsoleStreamJob` — on the final `done` broadcast, also
      broadcast an `update` to a new `console-evaluation` div containing

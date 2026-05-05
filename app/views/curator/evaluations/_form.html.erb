@@ -9,6 +9,12 @@
     (set hidden field, submit form). The server's turbo_stream
     response re-renders this partial in :positive / :negative shape.
 
+    Also rendered in append-mode from the Retrievals detail view: an
+    unpersisted `Curator::Evaluation` (no id) submits as a brand-new
+    row instead of an in-place update. The hidden `evaluation_id`
+    field is omitted in that case so the controller's create-vs-update
+    branch picks `create`.
+
     locals: evaluation %>
 <%= form_with url:   curator.evaluations_path,
               method: :post,
@@ -16,7 +22,9 @@
               data:  { controller:                  "console-evaluation",
                        "console-evaluation-target": "form" } do |f| %>
   <%= f.hidden_field :retrieval_id,  value: evaluation.retrieval_id %>
-  <%= f.hidden_field :evaluation_id, value: evaluation.id %>
+  <% if evaluation.persisted? %>
+    <%= f.hidden_field :evaluation_id, value: evaluation.id %>
+  <% end %>
   <%= f.hidden_field :rating, value: evaluation.rating,
                      data: { "console-evaluation-target": "rating" } %>
 

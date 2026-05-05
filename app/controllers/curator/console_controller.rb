@@ -1,12 +1,20 @@
 module Curator
   class ConsoleController < ApplicationController
     STRATEGIES = %w[hybrid vector keyword].freeze
+    # Console form may be loaded with `?origin=console_review` — the
+    # "Re-run in Console" deep link from the Retrievals tab uses it so
+    # the resulting retrieval is tagged as a review-loop run, not a
+    # fresh ad-hoc Console session. Anything else falls back to the
+    # plain :console default so a tampered querystring can't write
+    # garbage into the column.
+    FORM_ORIGINS = %w[console console_review].freeze
 
     def show
       @knowledge_base     = KnowledgeBase.resolve(params[:knowledge_base_slug])
       @knowledge_bases    = KnowledgeBase.order(:name, :id)
       @chat_model_options = ModelOptions.chat(@knowledge_base.chat_model)
       @topic              = SecureRandom.uuid
+      @origin             = FORM_ORIGINS.include?(params[:origin]) ? params[:origin] : "console"
     end
 
     # Form-submit endpoint. Enqueues a `Curator::ConsoleStreamJob` against
@@ -27,7 +35,8 @@ module Curator
         similarity_threshold: float_param(:similarity_threshold),
         strategy:             presence(params[:strategy]),
         system_prompt:        presence(params[:system_prompt]),
-        chat_model:           presence(params[:chat_model])
+        chat_model:           presence(params[:chat_model]),
+        origin:               FORM_ORIGINS.include?(params[:origin]) ? params[:origin] : "console"
       )
 
       # `update` (not `replace`): the status partial doesn't carry the

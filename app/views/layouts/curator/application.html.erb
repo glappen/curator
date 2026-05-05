@@ -34,6 +34,10 @@
                         curator.console_path,
                         class: class_names("app-nav__link",
                                            "app-nav__link--active" => nav_link_active?(:console)) %>
+            <%= link_to "Retrievals",
+                        curator.retrievals_path,
+                        class: class_names("app-nav__link",
+                                           "app-nav__link--active" => nav_link_active?(:retrievals)) %>
             <%= link_to "Evaluations",
                         curator.evaluations_path,
                         class: class_names("app-nav__link",

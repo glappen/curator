@@ -1,0 +1,86 @@
+<%# Retrievals filter form. State lives entirely in the URL so back/
+    forward and bookmarkable links restore the operator's view. GET +
+    `local: true` so the form just navigates rather than going through
+    Turbo Drive's frame inference. %>
+<%= form_with url:    retrievals_path,
+              method: :get,
+              class:  "form filter-form",
+              local:  true,
+              data:   { controller: "retrievals-filter" } do |f| %>
+  <div class="filter-form__row">
+    <div class="field">
+      <%= f.label :knowledge_base_id, "Knowledge base" %>
+      <%= f.select :knowledge_base_id,
+                   knowledge_bases.map { |kb| [kb.name, kb.id] },
+                   { include_blank: "All", selected: filters[:knowledge_base_id] } %>
+    </div>
+
+    <div class="field">
+      <%= f.label :status %>
+      <%= f.select :status,
+                   Curator::Retrieval::STATUSES.map { |s| [s.to_s.titleize, s.to_s] },
+                   { include_blank: "Any", selected: filters[:status] } %>
+    </div>
+
+    <div class="field">
+      <%= f.label :rating %>
+      <%= f.select :rating,
+                   Curator::Evaluation::RATINGS.map { |r| [r.to_s.titleize, r.to_s] },
+                   { include_blank: "Any", selected: filters[:rating] },
+                   data: { "retrievals-filter-target": "rating",
+                           action: "change->retrievals-filter#sync" } %>
+    </div>
+
+    <div class="field">
+      <%= f.label :chat_model %>
+      <%= f.select :chat_model,
+                   chat_models,
+                   { include_blank: "Any", selected: filters[:chat_model] } %>
+    </div>
+
+    <div class="field">
+      <%= f.label :embedding_model %>
+      <%= f.select :embedding_model,
+                   embedding_models,
+                   { include_blank: "Any", selected: filters[:embedding_model] } %>
+    </div>
+  </div>
+
+  <div class="filter-form__row">
+    <div class="field">
+      <%= f.label :from, "From" %>
+      <%= f.date_field :from, value: filters[:from] %>
+    </div>
+
+    <div class="field">
+      <%= f.label :to, "To" %>
+      <%= f.date_field :to, value: filters[:to] %>
+    </div>
+
+    <div class="field filter-form__field--grow">
+      <%= f.label :query, "Query contains" %>
+      <%= f.text_field :query, value: filters[:query] %>
+    </div>
+  </div>
+
+  <div class="filter-form__row filter-form__row--toggles">
+    <label class="filter-form__toggle">
+      <%= f.check_box :unrated,
+                      { checked: filters[:unrated],
+                        data:    { "retrievals-filter-target": "unrated",
+                                   action: "change->retrievals-filter#sync" } },
+                      "true",
+                      "0" %>
+      Unrated only
+    </label>
+    <label class="filter-form__toggle">
+      <%= f.check_box :show_review, { checked: filters[:show_review] }, "true", "0" %>
+      Show <code>console_review</code>
+    </label>
+  </div>
+
+  <div class="form__actions">
+    <%= f.submit "Filter", class: "btn btn--primary" %>
+    <%= link_to "Reset", retrievals_path, class: "btn" %>
+  </div>
+<% end %>

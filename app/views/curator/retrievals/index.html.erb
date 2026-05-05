@@ -1,0 +1,72 @@
+<div class="page-header">
+  <h1>Retrievals</h1>
+  <p class="text-muted">
+    <%= pluralize(@page.total, "retrieval") %>
+    <% if @filters[:show_review] %>
+      (including <code>:console_review</code> rows)
+    <% else %>
+      (<code>:console_review</code> rows hidden — toggle below to show)
+    <% end %>
+  </p>
+</div>
+
+<%= render "filter_form",
+           filters:          @filters,
+           knowledge_bases:  @knowledge_bases,
+           chat_models:      @chat_models,
+           embedding_models: @embedding_models %>
+
+<% if @retrievals.any? %>
+  <table class="table">
+    <thead>
+      <tr>
+        <th scope="col">Created</th>
+        <th scope="col">KB</th>
+        <th scope="col">Query</th>
+        <th scope="col">Status</th>
+        <th scope="col">Evals</th>
+        <th scope="col">Origin</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @retrievals.each do |retrieval| %>
+        <tr>
+          <td>
+            <%= link_to retrieval.created_at.to_fs(:short),
+                        retrieval_path(retrieval) %>
+          </td>
+          <td><%= retrieval.knowledge_base.name %></td>
+          <td>
+            <%= link_to truncate(retrieval.query, length: 80),
+                        retrieval_path(retrieval),
+                        class: "retrievals__query" %>
+          </td>
+          <td>
+            <span class="badge badge--<%= retrieval.status %>">
+              <%= retrieval.status %>
+            </span>
+          </td>
+          <td><%= @eval_counts.fetch(retrieval.id, 0) %></td>
+          <td>
+            <% unless retrieval.origin == "adhoc" %>
+              <span class="badge badge--origin"><%= retrieval.origin %></span>
+            <% end %>
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+
+  <%# `reject(nil)` rather than `compact`: boolean filter values
+      (`unrated`, `show_review`) can legitimately be `false`, and
+      `Hash#compact` would strip those alongside the nils, dropping
+      the explicit toggle state from pagination links. %>
+  <%= render "curator/shared/pagination",
+             page:     @page,
+             path_for: ->(n) {
+               retrievals_path(@filters.merge(page: n, per: @page.per)
+                                       .reject { |_, v| v.nil? })
+             } %>
+<% else %>
+  <p class="text-muted">No retrievals match these filters.</p>
+<% end %>

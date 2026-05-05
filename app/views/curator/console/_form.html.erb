@@ -7,6 +7,11 @@
               method: :post,
               class:  "form console-form" do |f| %>
   <%= f.hidden_field :topic, value: topic %>
+  <%# `:console` for direct Console use; `:console_review` round-trips
+      when the page was opened from a Retrievals-tab "Re-run in Console"
+      deep link, so the resulting retrieval gets tagged as review-loop
+      noise (default-hidden from the Retrievals index). %>
+  <%= f.hidden_field :origin, value: origin %>
 
   <div class="field">
     <%= f.label :knowledge_base_slug, "Knowledge base" %>

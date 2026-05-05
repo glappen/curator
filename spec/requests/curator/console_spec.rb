@@ -51,6 +51,35 @@ RSpec.describe "Curator::ConsoleController", type: :request do
       get "/curator/console"
       expect(response.body).to include('selected="selected" value="default"')
     end
+
+    # Form-helper attribute ordering is unstable across Rails versions
+    # (value first vs name first), so assert each attribute on the
+    # *same* input rather than a positional regex.
+    it "stashes ?origin=console_review into the form's hidden origin field" do
+      get "/curator/console", params: { origin: "console_review" }
+
+      input = response.body[/<input[^>]*name="origin"[^>]*>/]
+      expect(input).to be_present
+      expect(input).to include('type="hidden"')
+      expect(input).to include('value="console_review"')
+    end
+
+    it "defaults the hidden origin field to :console for direct console use" do
+      get "/curator/console"
+
+      input = response.body[/<input[^>]*name="origin"[^>]*>/]
+      expect(input).to be_present
+      expect(input).to include('value="console"')
+    end
+
+    it "ignores unknown origin values and falls back to :console" do
+      get "/curator/console", params: { origin: "evil" }
+
+      input = response.body[/<input[^>]*name="origin"[^>]*>/]
+      expect(input).to be_present
+      expect(input).to include('value="console"')
+      expect(response.body).not_to include("evil")
+    end
   end
 
   describe "GET /curator/kbs/:slug/console" do
@@ -97,7 +126,8 @@ RSpec.describe "Curator::ConsoleController", type: :request do
           similarity_threshold: "0.25",
           strategy:             "hybrid",
           system_prompt:        "be terse",
-          chat_model:           "gpt-5-nano"
+          chat_model:           "gpt-5-nano",
+          origin:               "console_review"
         }, headers: { "Accept" => "text/vnd.turbo-stream.html" }
       }.to have_enqueued_job(Curator::ConsoleStreamJob).with(
         topic:                topic,
@@ -107,7 +137,8 @@ RSpec.describe "Curator::ConsoleController", type: :request do
         similarity_threshold: 0.25,
         strategy:             "hybrid",
         system_prompt:        "be terse",
-        chat_model:           "gpt-5-nano"
+        chat_model:           "gpt-5-nano",
+        origin:               "console_review"
       )
 
       expect(response).to                          have_http_status(:ok)
@@ -140,6 +171,29 @@ RSpec.describe "Curator::ConsoleController", type: :request do
       expect(job[:args].first["chunk_limit"]).to be_nil
       expect(job[:args].first["similarity_threshold"]).to be_nil
       expect(job[:args].first["system_prompt"]).to be_nil
+    end
+
+    it "defaults origin to :console when the form omits it" do
+      post "/curator/console/run", params: {
+        topic:               topic,
+        knowledge_base_slug: "default",
+        query:               "anything"
+      }, headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+      job = ActiveJob::Base.queue_adapter.enqueued_jobs.last
+      expect(job[:args].first["origin"]).to eq("console")
+    end
+
+    it "drops unknown origin values and falls back to :console" do
+      post "/curator/console/run", params: {
+        topic:               topic,
+        knowledge_base_slug: "default",
+        query:               "anything",
+        origin:              "evil"
+      }, headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+      job = ActiveJob::Base.queue_adapter.enqueued_jobs.last
+      expect(job[:args].first["origin"]).to eq("console")
     end
 
     it "rejects with 400 and enqueues no job when topic is absent" do

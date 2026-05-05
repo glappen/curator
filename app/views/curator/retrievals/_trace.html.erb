@@ -1,0 +1,21 @@
+<% if steps.any? %>
+  <ol class="retrieval-trace">
+    <% steps.each do |step| %>
+      <li class="retrieval-trace__step retrieval-trace__step--<%= step.status %>">
+        <header class="retrieval-trace__head">
+          <span class="retrieval-trace__type"><%= step.step_type %></span>
+          <span class="retrieval-trace__duration"><%= step.duration_ms %> ms</span>
+          <span class="retrieval-trace__status"><%= step.status %></span>
+        </header>
+        <% if step.payload.present? %>
+          <pre class="retrieval-trace__payload"><%= JSON.pretty_generate(step.payload) %></pre>
+        <% end %>
+        <% if step.error_message.present? %>
+          <p class="retrieval-trace__error"><%= step.error_message %></p>
+        <% end %>
+      </li>
+    <% end %>
+  </ol>
+<% else %>
+  <p class="text-muted">No trace steps recorded.</p>
+<% end %>

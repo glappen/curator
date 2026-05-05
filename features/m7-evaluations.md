@@ -101,6 +101,91 @@ edits.
       `response.media_type == Mime[:turbo_stream]`.
   - Validate: 630 examples, 0 failures; rubocop no offenses.
 
+- **Phase 3 — Retrievals tab.** ✓
+  - `app/controllers/curator/retrievals_controller.rb` — index +
+    show. Filters: KB, date range, status, chat_model,
+    embedding_model, rating (joined to evaluations), unrated-only,
+    free-text query (ILIKE on `query`), show-exploratory toggle
+    (`show_review`). `:console_review` rows hidden by default.
+    Filter state lives entirely in the URL querystring, so paging
+    + back/forward restore the operator's view without server
+    state. Per-row `eval_count` rendered from a single grouped
+    aggregate to keep the index O(1) in row count.
+  - `config/routes.rb` — `resources :retrievals, only: %i[index show]`.
+  - `app/views/curator/retrievals/index.html.erb` —
+    filter form + paginated table (created_at, KB, query truncated,
+    status badge, eval count, origin tag if not `:adhoc`).
+    Pagination links round-trip the active filter set so paging
+    through a filtered view doesn't reset the operator's selection.
+  - `app/views/curator/retrievals/_filter_form.html.erb` — GET
+    form, all controls bound to the resolved `@filters` hash.
+    Unrated + show_review render as checkbox toggles.
+  - `app/views/curator/retrievals/show.html.erb` — unified detail
+    view. Query heading, status/origin badge row, persisted answer
+    text via `simple_format` (or "no persisted answer" placeholder
+    on `:failed`), ranked sources via the existing console
+    `_source` partial reused as-is, collapsible snapshot config
+    + trace timeline (`<details>` so disclosure state survives
+    navigation without JS), evaluations list + append-mode
+    annotation form.
+  - `app/views/curator/retrievals/_snapshot.html.erb` — `<dl>` of
+    chat/embedding model, strategy, threshold, chunk_limit,
+    strict_grounding, include_citations, system prompt hash + text,
+    total duration. Em-dash placeholder on nil columns
+    (`:failed` rows captured pre-snapshot).
+  - `app/views/curator/retrievals/_trace.html.erb` — ordered list
+    of `curator_retrieval_steps` with type, duration, status, and
+    pretty-printed payload JSON.
+  - `app/views/curator/retrievals/_evaluation_row.html.erb` —
+    read-only summary card for prior evals (rating badge,
+    evaluator role/id, feedback, ideal answer collapsible,
+    failure categories chip list). Each row carries
+    `id="evaluation_<id>"` so Phase 4's
+    `?evaluation_id=` deep link can scroll/anchor; the focused
+    row also gets an `is-focused` class.
+  - **Re-run-in-Console origin plumbing** —
+    `Curator::Asker` accepts `origin:` kwarg (default `:adhoc`) and
+    passes through to `Curator::Retrieval.open_for(origin:)`.
+    `ConsoleStreamJob` accepts `origin:` (default `:console`) and
+    forwards to Asker. `ConsoleController#show` accepts
+    `?origin=console_review` and stashes it in a hidden form field;
+    `#run` forwards it to the job. Unknown origin values fall back
+    to `:console` at both controller boundaries to keep a tampered
+    querystring from writing garbage into the column. The
+    Retrievals show view's "Re-run in Console" link includes
+    `origin=console_review` + the original `query`, so a re-run
+    lands tagged as review-loop noise (default-hidden from the
+    Retrievals index).
+  - `app/views/curator/evaluations/_form.html.erb` — extended to
+    skip the `evaluation_id` hidden field when the evaluation is
+    not persisted, so the same partial powers Console's
+    update-in-place flow AND the detail view's append-mode
+    "Add evaluation" scaffold without a second partial.
+  - `app/views/layouts/curator/application.html.erb` — primary nav
+    gains a "Retrievals" link wired through `nav_link_active?`.
+  - Specs:
+    - `spec/requests/curator/retrievals_spec.rb` — new file,
+      14 examples. Index: default scope hides `:console_review`;
+      `show_review=true` exposes it; per-filter coverage for KB,
+      status, chat_model, free-text query (ILIKE),
+      from/to date range, rating (joined to evals), unrated-only;
+      pagination preserves filters; empty-state copy renders.
+      Show: query + snapshot render; Re-run link includes
+      `origin=console_review` + the original query; persisted
+      hits render via shared `_source` partial; existing evals
+      list + append-mode form (no `evaluation_id` field; default
+      rating `:negative`); `?evaluation_id=` anchors and adds
+      `is-focused`; `:failed` row renders error + placeholder;
+      404 on unknown id.
+    - `spec/jobs/curator/console_stream_job_spec.rb` — added two
+      examples: persisted retrieval origin defaults to
+      `:console`; `:console_review` round-trips when forwarded.
+    - `spec/requests/curator/console_spec.rb` — added five
+      examples covering `?origin=console_review` querystring
+      stash into the hidden form field, default `:console`,
+      unknown-origin fallback at both `#show` and `#run`.
+  - Validate: 655 examples, 0 failures; rubocop no offenses.
+
 - **Phase 4 — Evaluations tab.** ✓
   - `Curator::EvaluationsController#index` — paginated list joined to
     `Curator::Retrieval` + `Curator::KnowledgeBase`. Filters chained
@@ -119,12 +204,10 @@ edits.
     detail view (Phase 3-owned) can scroll/anchor to the matching eval.
     Pagination's `path_for` lambda merges `@filters` into every link
     so filter state survives page navigation.
-  - `config/routes.rb` — added `:index` to `evaluations` resource;
-    also added `resources :retrievals, only: %i[show]` so the index's
-    `retrieval_path(...)` helper resolves at boot. The route is
-    unreachable until Phase 3 ships `RetrievalsController`; defining
-    the helper here keeps Phase 4 self-contained without a hardcoded
-    URL string. Trivial conflict on merge with Phase 3.
+  - `config/routes.rb` — added `:index` to `evaluations` resource.
+    The `retrievals` resource is owned by Phase 3 and exposes
+    `:index` + `:show`, so the index's `retrieval_path(...)` helper
+    resolves at boot.
   - Layout — added "Evaluations" link to primary nav via
     `nav_link_active?(:evaluations)`.
   - CSS — `.filter-form__grid` (auto-fit minmax 14rem columns) +
@@ -141,9 +224,8 @@ edits.
 
 ## Current Work
 
-_(empty — Phases 0–2 + 4 done; Phase 3 (Retrievals tab) is the
-remaining parallel-track piece. Phase 5 (exporters) and Phase 6
-(manual QA) gate on it.)_
+_(empty — Phases 0–4 done. Phase 5 (exporters) and Phase 6
+(manual QA) come next.)_
 
 ## Next Steps
 
@@ -252,7 +334,7 @@ remaining parallel-track piece. Phase 5 (exporters) and Phase 6
      dummy app — run a query, click 👎, see categories appear, submit,
      click 👎 again on a different category set, see same row updated.
 
-- [ ] **Phase 3 — Retrievals tab.** `[parallelizable with Phase 4]`
+- [x] **Phase 3 — Retrievals tab.** `[parallelizable with Phase 4]`
    Index + filters + detail view (the unified detail view shared with
    Phase 4).
    - `Curator::RetrievalsController` — `index` paginated list of

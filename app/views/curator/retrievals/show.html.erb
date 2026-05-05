@@ -1,0 +1,89 @@
+<div class="card">
+  <p class="card__back">
+    <%= link_to "← All retrievals", retrievals_path %>
+  </p>
+
+  <div class="page-header">
+    <div>
+      <h1 class="retrieval-detail__query"><%= @retrieval.query %></h1>
+      <p class="card__meta">
+        <%= @retrieval.created_at.to_fs(:long) %>
+        &middot; <%= @retrieval.knowledge_base.name %>
+        &middot; <span class="badge badge--<%= @retrieval.status %>"><%= @retrieval.status %></span>
+        <% unless @retrieval.origin == "adhoc" %>
+          &middot; <span class="badge badge--origin"><%= @retrieval.origin %></span>
+        <% end %>
+      </p>
+    </div>
+
+    <div class="page-header__actions">
+      <%= link_to "Re-run in Console",
+                  curator.knowledge_base_console_path(
+                    @retrieval.knowledge_base.slug,
+                    origin: "console_review",
+                    query:  @retrieval.query
+                  ),
+                  class: "btn" %>
+    </div>
+  </div>
+
+  <% if @retrieval.failed? %>
+    <section class="retrieval-detail__error">
+      <h2>Failure</h2>
+      <pre class="retrieval-detail__error-text"><%= @retrieval.error_message %></pre>
+    </section>
+  <% end %>
+
+  <section class="retrieval-detail__answer">
+    <h2>Answer</h2>
+    <% if @answer_text.present? %>
+      <div class="retrieval-detail__answer-text"><%= simple_format(@answer_text) %></div>
+    <% else %>
+      <p class="text-muted">No persisted answer for this row.</p>
+    <% end %>
+  </section>
+
+  <section class="retrieval-detail__sources">
+    <h2>Sources</h2>
+    <% if @hits.any? %>
+      <%= render partial: "curator/console/source",
+                 collection: @hits,
+                 as: :hit,
+                 locals: { kb: @retrieval.knowledge_base } %>
+    <% else %>
+      <p class="text-muted">No retrieval hits recorded.</p>
+    <% end %>
+  </section>
+
+  <%# Snapshot config + step trace are diagnostic; keep them collapsed
+      so they don't dominate the SME annotation view. `<details>` keeps
+      the disclosure state in the DOM and survives page navigation
+      without any JS. %>
+  <details class="retrieval-detail__snapshot">
+    <summary>Snapshot config</summary>
+    <%= render "snapshot", retrieval: @retrieval %>
+  </details>
+
+  <details class="retrieval-detail__trace">
+    <summary>Show trace (<%= @steps.size %> steps)</summary>
+    <%= render "trace", steps: @steps %>
+  </details>
+
+  <section class="retrieval-detail__evaluations">
+    <h2>Evaluations (<%= @evaluations.size %>)</h2>
+
+    <% if @evaluations.any? %>
+      <ul class="retrieval-detail__eval-list">
+        <% @evaluations.each do |eval_row| %>
+          <li id="evaluation_<%= eval_row.id %>"
+              class="retrieval-detail__eval-item <%= "is-focused" if eval_row.id == @focused_eval_id %>">
+            <%= render "evaluation_row", evaluation: eval_row %>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+
+    <h3>Add evaluation</h3>
+    <%= render "curator/evaluations/form", evaluation: @new_evaluation %>
+  </section>
+</div>

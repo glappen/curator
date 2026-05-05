@@ -15,7 +15,7 @@ module Curator
     def self.call(*args, **kwargs, &block) = new(*args, **kwargs).call(&block)
 
     def initialize(query, knowledge_base: nil, limit: nil, threshold: nil, strategy: nil,
-                   system_prompt: nil, chat_model: nil)
+                   system_prompt: nil, chat_model: nil, origin: :adhoc)
       @raw_query              = query
       @knowledge_base_arg     = knowledge_base
       @limit_override         = limit
@@ -23,6 +23,7 @@ module Curator
       @strategy_override      = strategy
       @system_prompt_override = system_prompt
       @chat_model_override    = chat_model
+      @origin                 = origin
     end
 
     def call(&stream_block)
@@ -38,6 +39,7 @@ module Curator
       retrieval_row        = Curator::Retrieval.open_for(
         pipeline:          pipeline,
         chat_model:        effective_chat_model,
+        origin:            @origin,
         strict_grounding:  kb.strict_grounding,
         include_citations: kb.include_citations
       )

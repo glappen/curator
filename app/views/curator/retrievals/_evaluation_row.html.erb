@@ -1,0 +1,32 @@
+<div class="retrieval-detail__eval">
+  <header class="retrieval-detail__eval-head">
+    <span class="badge badge--rating-<%= evaluation.rating %>">
+      <%= evaluation.rating == "positive" ? "👍" : "👎" %>
+      <%= evaluation.rating %>
+    </span>
+    <span class="text-muted"><%= evaluation.evaluator_role %></span>
+    <% if evaluation.evaluator_id.present? %>
+      <span class="text-muted">&middot; <%= evaluation.evaluator_id %></span>
+    <% end %>
+    <span class="text-muted">&middot; <%= evaluation.created_at.to_fs(:short) %></span>
+  </header>
+
+  <% if evaluation.feedback.present? %>
+    <p class="retrieval-detail__eval-feedback"><%= evaluation.feedback %></p>
+  <% end %>
+
+  <% if evaluation.ideal_answer.present? %>
+    <details class="retrieval-detail__eval-ideal">
+      <summary>Ideal answer</summary>
+      <p><%= evaluation.ideal_answer %></p>
+    </details>
+  <% end %>
+
+  <% if Array(evaluation.failure_categories).any? %>
+    <ul class="retrieval-detail__eval-categories">
+      <% evaluation.failure_categories.each do |cat| %>
+        <li class="badge badge--category"><%= cat.titleize %></li>
+      <% end %>
+    </ul>
+  <% end %>
+</div>

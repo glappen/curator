@@ -141,6 +141,35 @@ RSpec.describe Curator::ConsoleStreamJob, :broadcasts, type: :job do
     expect(assistant_msg.content).to eq(deltas.join)
   end
 
+  it "defaults persisted retrieval origin to :console" do
+    stub_chat_completion_stream(deltas: deltas)
+
+    described_class.perform_now(
+      topic:               topic,
+      knowledge_base_slug: "default",
+      query:               "Sample Markdown",
+      strategy:            "vector",
+      similarity_threshold: 0.0
+    )
+
+    expect(Curator::Retrieval.sole.origin).to eq("console")
+  end
+
+  it "tags the retrieval :console_review when origin is forwarded from the Re-run deep link" do
+    stub_chat_completion_stream(deltas: deltas)
+
+    described_class.perform_now(
+      topic:               topic,
+      knowledge_base_slug: "default",
+      query:               "Sample Markdown",
+      strategy:            "vector",
+      similarity_threshold: 0.0,
+      origin:              "console_review"
+    )
+
+    expect(Curator::Retrieval.sole.origin).to eq("console_review")
+  end
+
   it "broadcasts a failed status frame and persists a :failed retrieval row when Asker raises" do
     allow(Curator::Asker).to receive(:call).and_raise(Curator::LLMError, "stubbed LLM blew up")
 

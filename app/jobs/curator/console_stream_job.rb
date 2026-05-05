@@ -15,7 +15,7 @@ module Curator
   class ConsoleStreamJob < ApplicationJob
     def perform(topic:, knowledge_base_slug:, query:,
                 chunk_limit: nil, similarity_threshold: nil, strategy: nil,
-                system_prompt: nil, chat_model: nil)
+                system_prompt: nil, chat_model: nil, origin: :console)
       Rails.logger.info("[ConsoleStreamJob] start topic=#{topic} kb=#{knowledge_base_slug}")
       broadcast_status(topic, state: :streaming)
 
@@ -28,7 +28,8 @@ module Curator
         threshold:      similarity_threshold,
         strategy:       strategy,
         system_prompt:  system_prompt,
-        chat_model:     chat_model
+        chat_model:     chat_model,
+        origin:         origin
       ) do |delta|
         delta_count += 1
         # Wrap each delta in a `<span data-seq>` so the

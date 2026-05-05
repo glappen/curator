@@ -1,0 +1,35 @@
+<dl class="retrieval-detail__snapshot-list">
+  <dt>Chat model</dt>
+  <dd><%= retrieval.chat_model || "—" %></dd>
+
+  <dt>Embedding model</dt>
+  <dd><%= retrieval.embedding_model || "—" %></dd>
+
+  <dt>Retrieval strategy</dt>
+  <dd><%= retrieval.retrieval_strategy || "—" %></dd>
+
+  <dt>Similarity threshold</dt>
+  <dd><%= retrieval.similarity_threshold || "—" %></dd>
+
+  <dt>Chunk limit</dt>
+  <dd><%= retrieval.chunk_limit || "—" %></dd>
+
+  <dt>Strict grounding</dt>
+  <dd><%= retrieval.strict_grounding.nil? ? "—" : retrieval.strict_grounding %></dd>
+
+  <dt>Include citations</dt>
+  <dd><%= retrieval.include_citations.nil? ? "—" : retrieval.include_citations %></dd>
+
+  <dt>System prompt hash</dt>
+  <dd><code><%= retrieval.system_prompt_hash || "—" %></code></dd>
+
+  <dt>Total duration</dt>
+  <dd><%= retrieval.total_duration_ms ? "#{retrieval.total_duration_ms} ms" : "—" %></dd>
+
+  <% if retrieval.system_prompt_text.present? %>
+    <dt>System prompt</dt>
+    <dd>
+      <pre class="retrieval-detail__snapshot-prompt"><%= retrieval.system_prompt_text %></pre>
+    </dd>
+  <% end %>
+</dl>

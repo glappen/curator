@@ -32,7 +32,7 @@ module Curator
     # `chat_extras` keyword splat carries chat-flavored snapshot columns
     # (strict_grounding, include_citations, chat_id) that the ask path
     # populates from the start so an early failure still records intent.
-    def self.open_for(pipeline:, chat_model: nil, **chat_extras)
+    def self.open_for(pipeline:, chat_model: nil, origin: :adhoc, **chat_extras)
       return nil unless Curator.config.log_queries
       kb = pipeline.knowledge_base
 
@@ -44,6 +44,7 @@ module Curator
         retrieval_strategy:   pipeline.strategy.to_s,
         similarity_threshold: pipeline.threshold,
         chunk_limit:          pipeline.limit,
+        origin:               origin,
         **chat_extras
       )
     end

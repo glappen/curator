@@ -3,6 +3,7 @@ module Curator
     self.table_name = "curator_retrievals"
 
     STATUSES = %i[success failed].freeze
+    ORIGINS  = %i[adhoc console console_review].freeze
 
     belongs_to :knowledge_base, class_name: "Curator::KnowledgeBase"
     belongs_to :chat,    class_name: "Chat",    optional: true
@@ -13,6 +14,7 @@ module Curator
     has_many :evaluations,     class_name: "Curator::Evaluation",    dependent: :destroy
 
     enum :status, STATUSES.index_with(&:to_s)
+    enum :origin, ORIGINS.index_with(&:to_s)
 
     validates :query, presence: true
 

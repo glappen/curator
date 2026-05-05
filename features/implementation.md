@@ -207,6 +207,16 @@ chunk_limit            integer          # snapshot
 total_duration_ms      integer
 status                 string           # :success | :failed
 error_message          text nullable
+origin                 string default 'adhoc' indexed
+                                        # :adhoc | :console | :console_review
+                                        # — :adhoc covers Curator.ask /
+                                        # API / host-app callers, :console
+                                        # marks Query Testing Console runs,
+                                        # :console_review marks "Re-run in
+                                        # Console" deep-links from a
+                                        # Retrievals-tab detail view.
+                                        # Default Retrievals/Evaluations
+                                        # admin tabs hide :console_review.
 created_at
 ```
 
@@ -287,6 +297,19 @@ Curator.ingest(file,
                source_url: "https://docs.acme.com/refunds",
                metadata: { author: "Legal Team", tags: ["policy"] })
 Curator.ingest_directory("./docs", knowledge_base: :support)
+
+# Evaluation — canonical write path shared by admin UI and host
+# controllers exposing end-user feedback. Returns the persisted
+# Curator::Evaluation; raises on validation failure.
+Curator.evaluate(
+  retrieval:          retrieval_or_id,
+  rating:             :positive,           # | :negative
+  evaluator_role:     :reviewer,           # | :end_user (required)
+  evaluator_id:       "alice@acme.com",    # opaque host-app user id
+  feedback:           "matched our policy doc",
+  ideal_answer:       nil,                 # populate on :negative
+  failure_categories: []                   # zero-or-more on :negative
+)
 ```
 
 ### Value objects
@@ -506,17 +529,79 @@ equality. This surfaces correlations — e.g. "75% of `:wrong_retrieval`
 evaluations also carry `:hallucination`" → retrieval quality drives
 hallucination rates.
 
+### Write path — `Curator.evaluate`
+
+All evaluation writes (admin UI, host-app end-user feedback) go through the
+same service object: `Curator::Evaluator.call(...)`, exposed as
+`Curator.evaluate(...)` (delegator matching `Curator.ingest` /
+`Curator.ask`). It validates the rating against
+`Curator::Evaluation::RATINGS`, normalizes `failure_categories` against
+`FAILURE_CATEGORIES`, and enforces the "categories empty unless `:negative`"
+constraint. Returns the persisted `Curator::Evaluation`; raises
+`Curator::Evaluation::ValidationError` on bad input.
+
+Two configuration hooks resolve the evaluator id symmetrically:
+
+- `current_admin_evaluator` — block called with the controller; returns an
+  opaque id to stamp on admin-side evals (typically `current_user&.email`).
+- `current_end_user_evaluator` — block called with the host's controller;
+  returns an opaque id for end-user feedback evals.
+
+Both default to `->(_controller) { nil }` so zero-config hosts get
+nil-evaluator evals everywhere with no breakage.
+
+### Admin surfaces
+
+Three admin entry points, all writing through `Curator.evaluate`:
+
+1. **Console inline rating** — after a Query Testing Console run completes
+   (`done` broadcast), a thumbs widget (👍 / 👎) is injected. Either thumb
+   POSTs immediately and reveals an optional rating-aware "Add details"
+   expansion. Same operator session edits the same eval row in place
+   (POST returns id; subsequent submits PATCH); a fresh load appends a
+   new row.
+2. **Retrievals tab** — paginated list of every `curator_retrievals` row
+   with filters (KB, date range, status, chat_model, embedding_model,
+   rating join, unrated-only, free-text query). Detail view renders the
+   query, persisted answer, ranked sources (reused `_source` partial),
+   collapsible snapshot config, "Re-run in Console" deep-link (tagged
+   `origin: :console_review`), trace timeline behind a "Show trace"
+   toggle, and an annotation form for SME evals. Default scope hides
+   `:console_review` rows.
+3. **Evaluations tab** — paginated list of every `curator_evaluations` row
+   joined to its retrieval, with rating / evaluator_role /
+   failure_categories filters. Each row links to the Retrievals-tab
+   detail view with `?evaluation_id=` so the matching eval scrolls into
+   view.
+
+End-user feedback in v1: hosts wire ~5 lines of controller calling
+`Curator.evaluate(..., evaluator_role: :end_user)`; the README ships the
+canonical example. A turnkey `curator:feedback_widget` generator is
+deferred to v2+.
+
 ### Export
 
-Rake task and admin UI "Export" button share `Curator::Evaluations::Exporter`
-service object. CSV streams via `ActionController::Streaming`; JSON is a single
-response. Exports respect current admin UI filters (KB, date range, rating,
-evaluator_role, failure_categories — filter matches rows where any selected
-category is present).
+Two exporters, two rake tasks, two admin "Export" buttons:
 
-Columns: `retrieval_id, query, answer (truncated), knowledge_base, chat_model,
-embedding_model, rating, feedback, ideal_answer, failure_categories (semicolon-
-joined in CSV; JSON array in JSON), evaluator_id, evaluator_role, created_at`.
+- `Curator::Retrievals::Exporter` — every retrieval row (CSV / JSON);
+  rake `curator:retrievals:export`.
+- `Curator::Evaluations::Exporter` — every eval joined to retrieval
+  (CSV / JSON); rake `curator:evaluations:export`.
+
+CSV streams via `ActionController::Live`; JSON is a single response
+(v1 sizes — large export queue-and-email is deferred to v2+). Exports
+respect current admin UI filters (KB, date range, rating,
+evaluator_role, failure_categories — filter matches rows where any
+selected category is present).
+
+Eval columns: `retrieval_id, query, answer (truncated), knowledge_base,
+chat_model, embedding_model, rating, feedback, ideal_answer,
+failure_categories (semicolon-joined in CSV; JSON array in JSON),
+evaluator_id, evaluator_role, created_at`.
+
+Retrieval columns: `retrieval_id, query, answer (truncated), knowledge_base,
+chat_model, embedding_model, status, origin, retrieved_hit_count,
+eval_count, created_at`.
 
 ---
 
@@ -574,7 +659,15 @@ Empty-state aware:
   page number + char offsets
 - **Query Testing Console** — streams response alongside retrieved chunks; tweak
   chunk count / threshold / prompt template live
-- **Response Evaluation** — review queries, submit SME annotations, export
+- **Response Evaluation** — three surfaces sharing the `Curator.evaluate`
+  write path:
+  - Console inline thumbs (rating-aware expansion injected on `done`
+    broadcast)
+  - Retrievals tab — list/filter every retrieval; detail view with
+    "Re-run in Console" deep-link (tagged `origin: :console_review`)
+  - Evaluations tab — list/filter every eval, click-through to the
+    retrieval detail view
+  Both tabs ship CSV + JSON export buttons.
 
 ### Asset strategy
 
@@ -670,6 +763,13 @@ Generated output (per invocation):
 - `ChatResponseJob` (background RAG response)
 - Routes (scoped or top-level)
 
+### Deferred to v2+
+
+- `curator:feedback_widget` — turnkey end-user thumbs widget that emits
+  a controller + view + Stimulus into the host. v1 hosts wire ~5 lines
+  themselves calling `Curator.evaluate(..., evaluator_role: :end_user)`;
+  the README ships the canonical example.
+
 ---
 
 ## Rake Tasks
@@ -678,7 +778,8 @@ Generated output (per invocation):
 curator:reembed KB=<slug>               # re-embed all chunks in a KB
                                         # (after embedding model change)
 curator:reingest DOCUMENT=<id>          # re-run full pipeline on one doc
-curator:evaluations:export KB=<slug> FORMAT=<csv|json>
+curator:retrievals:export KB=<slug> FORMAT=<csv|json> [SINCE=<iso>]
+curator:evaluations:export KB=<slug> FORMAT=<csv|json> [SINCE=<iso>]
 curator:stats                           # print KB/doc/chunk/retrieval counts
 curator:ingest PATH=<dir> KB=<slug>     # CLI equivalent of Curator.ingest_directory
 curator:vacuum KB=<slug>                # remove orphaned chunks/embeddings
@@ -703,6 +804,12 @@ Curator.configure do |config|
   config.authenticate_admin_with do
     redirect_to main_app.login_path unless current_user&.admin?
   end
+
+  # Identity hooks for evaluations (M7). Both default to
+  # ->(_controller) { nil } so zero-config hosts get nil-evaluator evals
+  # everywhere, no breakage. Stamp opaque host-app user ids onto evals.
+  config.current_admin_evaluator    = ->(controller) { controller.current_user&.email }
+  config.current_end_user_evaluator = ->(controller) { controller.current_user&.id&.to_s }
 
   # Document handling
   config.max_document_size = 50.megabytes

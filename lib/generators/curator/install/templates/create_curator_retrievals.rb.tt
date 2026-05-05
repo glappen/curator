@@ -27,11 +27,18 @@ class CreateCuratorRetrievals < ActiveRecord::Migration[7.0]
       t.string  :status,        null: false, default: "success"
       t.text    :error_message
 
+      # :adhoc | :console | :console_review. Default :adhoc covers
+      # Curator.ask / API / host-app callers; Console runs and "Re-run
+      # in Console" deep-links populate the other two so the admin
+      # Retrievals tab can hide review-loop noise from the default view.
+      t.string :origin, null: false, default: "adhoc"
+
       t.datetime :created_at, null: false
     end
 
     add_index :curator_retrievals, :chat_id
     add_index :curator_retrievals, :message_id
     add_index :curator_retrievals, :created_at
+    add_index :curator_retrievals, :origin
   end
 end

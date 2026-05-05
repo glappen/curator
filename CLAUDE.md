@@ -17,6 +17,8 @@ deferrals. `features/initial.md` captures product vision.
 - **Tests**: RSpec under `spec/`. No Minitest. Host app for integration specs
   lives at `spec/dummy` (Postgres + pgvector).
 - **Style**: Rails Omakase RuboCop. Run `bundle exec rubocop` after changes.
+- **Commit messages**: one sentence, subject line only. No body, no bullet
+  lists, no "why we did this" paragraphs — that belongs in the PR description.
 - **Table prefix**: All Curator-owned tables are prefixed `curator_`. RubyLLM
   owns `chats`, `messages`, `tool_calls`, `models` — do not modify beyond the
   one additive `curator_scope` column on `chats`.
@@ -27,16 +29,26 @@ deferrals. `features/initial.md` captures product vision.
     chunkers/
     retrievers/           # vector, keyword, hybrid, rrf
     prompt/               # assembler + templates
-    evaluations/          # exporter
   app/controllers/curator/
   app/controllers/curator/api/
   app/models/curator/
-  app/jobs/curator/       # ingest + embed jobs
+  app/jobs/curator/       # ingest, embed, console stream
+  app/services/curator/   # multi-step orchestration (e.g. document ingest)
+  app/javascript/controllers/curator/  # Stimulus controllers for admin UI
   app/views/curator/
   ```
+- **Public entry points** (`lib/curator.rb`): `Curator.ingest`,
+  `Curator.ingest_directory`, `Curator.retrieve`, `Curator.ask`,
+  `Curator.evaluate`, `Curator.reembed`, `Curator.reingest`. These are the
+  module-level methods host apps call; everything else is internal.
 - **Value objects**: `Curator::Answer`, `Curator::RetrievalResults`,
-  `Curator::Chat`, `Curator::Extractors::ExtractionResult`. These are the
-  stable public-facing return types.
+  `Curator::Hit`, `Curator::Chat`, `Curator::Extractors::ExtractionResult`.
+  These are the stable public-facing return types.
+- **Configuration hooks** (set in `Curator.configure` block):
+  `authenticate_admin_with` gates the Hotwire admin UI, `authenticate_api_with`
+  gates the JSON API, `current_admin_evaluator` and `current_end_user_evaluator`
+  resolve evaluator identity for `Curator.evaluate` writes. All default to
+  permissive/null callables — host apps wire them up.
 - **Errors**: `Curator::EmbeddingError`, `Curator::RetrievalError`,
   `Curator::LLMError` all inherit from a base `Curator::Error`. Fail loud;
   every failure creates a `curator_retrievals` row with `status: :failed`.
@@ -58,6 +70,10 @@ deferrals. `features/initial.md` captures product vision.
 - **Snapshot config on every retrieval** (model, prompt, threshold, chunk_limit
   captured on `curator_retrievals` at query time). Do not lose this — v2
   analytics depend on it.
+- **`origin` enum on `curator_retrievals`** distinguishes query source:
+  `:adhoc` (host-app calls), `:console` (admin sandbox), `:console_review`
+  (replay of a logged retrieval). Added in M7 so eval-quality metrics aren't
+  contaminated by exploratory console traffic.
 - **Scoped chat UIs** share RubyLLM models but partition via `curator_scope`
   string on `chats`.
 - **Process-global inflection rule** registered at engine boot

@@ -101,10 +101,49 @@ edits.
       `response.media_type == Mime[:turbo_stream]`.
   - Validate: 630 examples, 0 failures; rubocop no offenses.
 
+- **Phase 4 — Evaluations tab.** ✓
+  - `Curator::EvaluationsController#index` — paginated list joined to
+    `Curator::Retrieval` + `Curator::KnowledgeBase`. Filters chained
+    conditionally from querystring; date inputs coerced via
+    `Date.iso8601` and silently dropped on parse failure (the index
+    is exploratory — a malformed `since=garbage` becomes a no-op,
+    not a 400). `failure_categories` uses Postgres array overlap
+    (`&& ARRAY[…]::varchar[]`) for ANY-of semantics. `evaluator_id`
+    is case-insensitive substring match (ILIKE). Order is
+    `created_at DESC, id DESC` so ties are deterministic across pages.
+    `FILTER_PARAMS` constant pins the permitted set.
+  - `app/views/curator/evaluations/index.html.erb` — filter form
+    (auto-fit grid + categories fieldset) + table + pagination.
+    Each row's query column links to
+    `retrieval_path(retrieval, evaluation_id: e.id)` so the unified
+    detail view (Phase 3-owned) can scroll/anchor to the matching eval.
+    Pagination's `path_for` lambda merges `@filters` into every link
+    so filter state survives page navigation.
+  - `config/routes.rb` — added `:index` to `evaluations` resource;
+    also added `resources :retrievals, only: %i[show]` so the index's
+    `retrieval_path(...)` helper resolves at boot. The route is
+    unreachable until Phase 3 ships `RetrievalsController`; defining
+    the helper here keeps Phase 4 self-contained without a hardcoded
+    URL string. Trivial conflict on merge with Phase 3.
+  - Layout — added "Evaluations" link to primary nav via
+    `nav_link_active?(:evaluations)`.
+  - CSS — `.filter-form__grid` (auto-fit minmax 14rem columns) +
+    `.filter-form__categories` (wrapped inline checkbox rows).
+  - Specs:
+    - `spec/requests/curator/evaluations_spec.rb` (new
+      `GET /curator/evaluations` section) — index renders, KB /
+      rating / evaluator_role / evaluator_id (ILIKE) /
+      failure_categories ANY-of (with explicit "matches", "doesn't
+      match", and "matches via overlap" cases) / chat_model /
+      embedding_model / since-date filters; pagination link
+      preserves filter state; empty-state copy.
+  - Validate: 641 examples, 0 failures; rubocop no offenses.
+
 ## Current Work
 
-_(empty — Phase 2 done; Phase 3 (Retrievals tab) and Phase 4
-(Evaluations tab) can run in parallel worktrees next.)_
+_(empty — Phases 0–2 + 4 done; Phase 3 (Retrievals tab) is the
+remaining parallel-track piece. Phase 5 (exporters) and Phase 6
+(manual QA) gate on it.)_
 
 ## Next Steps
 
@@ -258,7 +297,7 @@ _(empty — Phase 2 done; Phase 3 (Retrievals tab) and Phase 4
      `origin: "console_review"` and is hidden from the default
      Retrievals index.
 
-- [ ] **Phase 4 — Evaluations tab.** `[parallelizable with Phase 3 after
+- [x] **Phase 4 — Evaluations tab.** `[parallelizable with Phase 3 after
    the unified detail view stabilizes]` Index + filters; detail click
    reuses the Phase 3 `retrievals#show` view.
    - `Curator::EvaluationsController#index` — paginated list of

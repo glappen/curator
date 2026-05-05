@@ -1,0 +1,127 @@
+<%# Evaluations tab — paginated list joined to retrievals + KBs. Each
+    row links to the unified detail view (`retrievals#show`, owned by
+    Phase 3) with `?evaluation_id=...` so the detail page can scroll to
+    and expand the matching eval. %>
+<div class="page-header">
+  <h1>Evaluations</h1>
+</div>
+
+<%= form_with url: evaluations_path, method: :get, class: "form filter-form" do |f| %>
+  <div class="filter-form__grid">
+    <div class="field">
+      <%= f.label :kb, "Knowledge base" %>
+      <%= f.select :kb,
+                   @kb_options,
+                   include_blank: "All", selected: @filters[:kb] %>
+    </div>
+
+    <div class="field">
+      <%= f.label :rating %>
+      <%= f.select :rating,
+                   Curator::Evaluation::RATINGS.map { |r| [ r.to_s.titleize, r ] },
+                   include_blank: "Any", selected: @filters[:rating] %>
+    </div>
+
+    <div class="field">
+      <%= f.label :evaluator_role, "Evaluator role" %>
+      <%= f.select :evaluator_role,
+                   Curator::Evaluator::EVALUATOR_ROLES.map { |r| [ r.to_s.titleize, r ] },
+                   include_blank: "Any", selected: @filters[:evaluator_role] %>
+    </div>
+
+    <div class="field">
+      <%= f.label :evaluator_id, "Evaluator id" %>
+      <%= f.text_field :evaluator_id, value: @filters[:evaluator_id], placeholder: "contains…" %>
+    </div>
+
+    <div class="field">
+      <%= f.label :since, "Since" %>
+      <%= f.date_field :since, value: @filters[:since] %>
+    </div>
+
+    <div class="field">
+      <%= f.label :until, "Until" %>
+      <%= f.date_field :until, value: @filters[:until] %>
+    </div>
+
+    <div class="field">
+      <%= f.label :chat_model, "Chat model" %>
+      <%= f.select :chat_model,
+                   @chat_model_options,
+                   include_blank: "Any", selected: @filters[:chat_model] %>
+    </div>
+
+    <div class="field">
+      <%= f.label :embedding_model, "Embedding model" %>
+      <%= f.text_field :embedding_model, value: @filters[:embedding_model] %>
+    </div>
+  </div>
+
+  <fieldset class="filter-form__categories">
+    <legend>Failure categories <span class="text-muted">(any of)</span></legend>
+    <% Curator::Evaluation::FAILURE_CATEGORIES.each do |cat| %>
+      <label title="<%= Curator::Evaluation::FAILURE_CATEGORY_TOOLTIPS.fetch(cat) %>">
+        <%= check_box_tag "failure_categories[]",
+                          cat,
+                          @filters[:failure_categories].include?(cat) %>
+        <%= cat.titleize %>
+      </label>
+    <% end %>
+  </fieldset>
+
+  <div class="form__actions">
+    <%= f.submit "Filter", class: "btn btn--primary" %>
+    <%= link_to "Reset", evaluations_path, class: "btn" %>
+  </div>
+<% end %>
+
+<% if @evaluations.any? %>
+  <table class="table">
+    <thead>
+      <tr>
+        <th scope="col">Created</th>
+        <th scope="col">Query</th>
+        <th scope="col">KB</th>
+        <th scope="col">Rating</th>
+        <th scope="col">Failure categories</th>
+        <th scope="col">Role</th>
+        <th scope="col">Evaluator</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @evaluations.each do |e| %>
+        <% retrieval = e.retrieval %>
+        <tr>
+          <td><%= l(e.created_at, format: :short) %></td>
+          <td>
+            <%= link_to truncate(retrieval.query, length: 80),
+                        retrieval_path(retrieval, evaluation_id: e.id) %>
+          </td>
+          <td><%= retrieval.knowledge_base.name %></td>
+          <td>
+            <span class="badge badge--<%= e.rating == "positive" ? "success" : "danger" %>">
+              <%= e.rating == "positive" ? "👍 Positive" : "👎 Negative" %>
+            </span>
+          </td>
+          <td>
+            <% if e.rating == "negative" && Array(e.failure_categories).any? %>
+              <% Array(e.failure_categories).each do |cat| %>
+                <span class="badge badge--neutral"><%= cat.titleize %></span>
+              <% end %>
+            <% else %>
+              <span class="text-muted">—</span>
+            <% end %>
+          </td>
+          <td><span class="badge badge--accent"><%= e.evaluator_role&.titleize || "—" %></span></td>
+          <td><%= e.evaluator_id.presence || content_tag(:span, "—", class: "text-muted") %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+
+  <%= render "curator/shared/pagination",
+             page: @page,
+             path_for: ->(n) { evaluations_path(@filters.merge(page: n, per: @page.per)) } %>
+<% else %>
+  <p class="text-muted">No evaluations match the current filters.</p>
+<% end %>

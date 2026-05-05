@@ -406,6 +406,7 @@
 .curator-ui input[type="search"],
 .curator-ui input[type="url"],
 .curator-ui input[type="file"],
+.curator-ui input[type="date"],
 .curator-ui select,
 .curator-ui textarea {
   font: inherit;
@@ -415,6 +416,7 @@
   border-radius: var(--radius-sm);
   padding: var(--space-2) var(--space-3);
   width: 100%;
+  box-sizing: border-box;
 }
 
 .curator-ui textarea { min-height: 6rem; resize: vertical; }
@@ -888,4 +890,35 @@
   color: var(--color-text-subtle);
   background: var(--color-surface-alt);
   pointer-events: none;
+}
+
+/* ---- Filter form (M7 Phase 4 — Evaluations index) ----
+   Compact grid of single-line fields above a paginated table. The
+   grid auto-fits columns ~16rem wide so the form reflows from a
+   single row of fields on wide screens to a stacked column on
+   narrow ones, without media queries. */
+.curator-ui .filter-form {
+  margin-bottom: var(--space-5);
+}
+.curator-ui .filter-form__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-3) var(--space-4);
+}
+/* Tighter fieldset than the global `.form fieldset` rule — the
+   filter form already sits in a flex column with `gap: var(--space-5)`
+   between siblings, so the categories panel doesn't need the
+   default chunky top/bottom padding on top of that. */
+.curator-ui .filter-form__categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-4) var(--space-3);
+}
+.curator-ui .filter-form__categories label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-weight: 400;
+  cursor: pointer;
 }

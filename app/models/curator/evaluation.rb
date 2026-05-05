@@ -31,6 +31,18 @@ module Curator
     validate :failure_categories_are_known
     validate :failure_categories_only_on_negative
 
+    # Distinct chat_models drawn from retrievals that have at least one
+    # evaluation. Used to populate the chat-model filter dropdown on the
+    # Evaluations index — restricting to evaluated retrievals means the
+    # dropdown only surfaces values that can actually narrow the list.
+    def self.distinct_chat_models
+      joins(:retrieval)
+        .where.not(curator_retrievals: { chat_model: nil })
+        .distinct
+        .order("curator_retrievals.chat_model")
+        .pluck("curator_retrievals.chat_model")
+    end
+
     private
 
     def failure_categories_are_known

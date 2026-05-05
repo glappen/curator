@@ -22,7 +22,7 @@
 
   <div class="field">
     <%= f.label :query %>
-    <%= f.text_area :query, rows: 4, required: true,
+    <%= f.text_area :query, value: query, rows: 4, required: true,
                     placeholder: "Ask a question..." %>
   </div>
 
@@ -32,6 +32,7 @@
     <div class="field">
       <%= f.label :chunk_limit, "Chunk limit (top-K)" %>
       <%= f.number_field :chunk_limit,
+                         value: chunk_limit,
                          min: 1,
                          placeholder: knowledge_base.chunk_limit.to_s %>
     </div>
@@ -39,6 +40,7 @@
     <div class="field">
       <%= f.label :similarity_threshold %>
       <%= f.number_field :similarity_threshold,
+                         value: similarity_threshold,
                          step: 0.01, min: 0, max: 1,
                          placeholder: knowledge_base.similarity_threshold.to_s %>
     </div>
@@ -47,7 +49,7 @@
       <%= f.label :strategy, "Retrieval strategy" %>
       <%= f.select :strategy,
                    Curator::ConsoleController::STRATEGIES.map { |s| [s.titleize, s] },
-                   { selected: knowledge_base.retrieval_strategy } %>
+                   { selected: strategy.presence || knowledge_base.retrieval_strategy } %>
     </div>
 
     <div class="field">
@@ -56,12 +58,12 @@
                  form:    f,
                  field:   :chat_model,
                  options: chat_model_options,
-                 current: knowledge_base.chat_model %>
+                 current: chat_model.presence || knowledge_base.chat_model %>
     </div>
 
     <div class="field">
       <%= f.label :system_prompt %>
-      <%= f.text_area :system_prompt, rows: 4,
+      <%= f.text_area :system_prompt, value: system_prompt, rows: 4,
                       placeholder: knowledge_base.system_prompt.presence ||
                                    "(KB default — leave blank to use)" %>
     </div>

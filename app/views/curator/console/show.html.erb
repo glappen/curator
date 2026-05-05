@@ -9,11 +9,17 @@
 <div class="console-shell">
   <section class="console-shell__form">
     <%= render "form",
-               knowledge_base:     @knowledge_base,
-               knowledge_bases:    @knowledge_bases,
-               chat_model_options: @chat_model_options,
-               topic:              @topic,
-               origin:             @origin %>
+               knowledge_base:       @knowledge_base,
+               knowledge_bases:      @knowledge_bases,
+               chat_model_options:   @chat_model_options,
+               topic:                @topic,
+               origin:               @origin,
+               query:                @query,
+               chunk_limit:          @chunk_limit,
+               similarity_threshold: @similarity_threshold,
+               strategy:             @strategy,
+               chat_model:           @chat_model,
+               system_prompt:        @system_prompt %>
   </section>
 
   <section class="console-shell__answer">

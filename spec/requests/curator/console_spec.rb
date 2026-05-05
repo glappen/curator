@@ -80,6 +80,73 @@ RSpec.describe "Curator::ConsoleController", type: :request do
       expect(input).to include('value="console"')
       expect(response.body).not_to include("evil")
     end
+
+    # The "Re-run in Console" deep link from the Retrievals tab carries
+    # the original query as a URL param so the operator can tweak and
+    # rerun without retyping. The query lands in the textarea body, not
+    # an attribute.
+    it "pre-fills the query textarea from ?query=..." do
+      get "/curator/console", params: { query: "what is alpha?" }
+
+      textarea = response.body[%r{<textarea[^>]*name="query"[^>]*>[^<]*</textarea>}]
+      expect(textarea).to be_present
+      expect(textarea).to include("what is alpha?")
+    end
+
+    # The "Re-run in Console" deep link round-trips the full snapshot
+    # config from the logged retrieval — query plus every per-run
+    # override the form exposes — so the page reproduces the exact
+    # configuration that produced the row.
+    it "pre-fills every override field from URL params" do
+      get "/curator/console", params: {
+        query:                "what is alpha?",
+        chunk_limit:          "9",
+        similarity_threshold: "0.25",
+        strategy:             "vector",
+        chat_model:           "gpt-5-nano",
+        system_prompt:        "be terse"
+      }
+
+      body = response.body
+
+      chunk_input = body[/<input[^>]*name="chunk_limit"[^>]*>/]
+      expect(chunk_input).to include('value="9"')
+
+      sim_input = body[/<input[^>]*name="similarity_threshold"[^>]*>/]
+      expect(sim_input).to include('value="0.25"')
+
+      expect(body).to include('selected="selected" value="vector"')
+      expect(body).to include('selected="selected" value="gpt-5-nano"')
+
+      prompt_textarea = body[%r{<textarea[^>]*name="system_prompt"[^>]*>[^<]*</textarea>}]
+      expect(prompt_textarea).to include("be terse")
+    end
+
+    # An unknown strategy in the URL must not poison the dropdown — fall
+    # back to the KB default so the form stays in a runnable state.
+    it "ignores an unknown strategy and uses the KB default" do
+      get "/curator/console", params: { strategy: "evil" }
+
+      # KB default is "hybrid" from the let!(:default_kb) above.
+      expect(response.body).to include('selected="selected" value="hybrid"')
+    end
+
+    # `chat_model` is not whitelisted (unlike `strategy`) because the
+    # RubyLLM chat-model universe is open and a deep link from a
+    # retrieval row may carry an experimental, retired, or aliased id
+    # that isn't in the live registry. ModelOptions' `(custom)` optgroup
+    # is supposed to round-trip such ids — but only if the controller
+    # passes the URL-supplied id to `ModelOptions.chat` as the *current*
+    # value. This spec pins that wiring so a refactor can't quietly
+    # revert to building options around the KB default.
+    it "round-trips an unfamiliar chat_model via the (custom) optgroup" do
+      get "/curator/console", params: { chat_model: "gpt-experimental-9000" }
+
+      expect(response.body).to include("(custom)")
+      expect(response.body).to include(
+        'selected="selected" value="gpt-experimental-9000"'
+      )
+    end
   end
 
   describe "GET /curator/kbs/:slug/console" do

@@ -41,6 +41,25 @@ Curator.configure do |config|
   # end
 
   # ============================================================
+  # Evaluator identity
+  # ============================================================
+  #
+  # Curator persists an opaque `evaluator_id` (string) on every
+  # `curator_evaluations` row so you can attribute SME annotations and
+  # end-user feedback to a specific account. Both hooks default to
+  # `->(_controller) { nil }`, so unconfigured hosts simply persist
+  # `evaluator_id: nil` everywhere — no breakage.
+  #
+  # The blocks receive the controller and run via `.call` (not
+  # `instance_exec` like the auth hook), so reach into it via the arg.
+
+  # Admin UI annotations (Console inline, Retrievals tab, Evaluations tab).
+  # config.current_admin_evaluator = ->(controller) { controller.current_user&.email }
+
+  # Host-app end-user feedback (Curator.evaluate from your own controllers).
+  # config.current_end_user_evaluator = ->(controller) { controller.current_user&.id&.to_s }
+
+  # ============================================================
   # Ingestion
   # ============================================================
 

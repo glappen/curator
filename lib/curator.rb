@@ -25,6 +25,7 @@ require "curator/retriever"
 require "curator/prompt/templates"
 require "curator/prompt/assembler"
 require "curator/asker"
+require "curator/evaluator"
 require "curator/reembed"
 require "curator/model_options"
 
@@ -167,6 +168,36 @@ module Curator
         system_prompt:  system_prompt,
         chat_model:     chat_model,
         &block
+      )
+    end
+
+    # Record an evaluation against a persisted retrieval.
+    #
+    # Canonical write path used by admin Console / Retrievals /
+    # Evaluations UIs and by host-app controllers exposing end-user
+    # feedback. Both rating types accept optional `feedback` and
+    # `evaluator_id` (opaque host-app user id, populated from
+    # `Curator.config.current_admin_evaluator` /
+    # `current_end_user_evaluator`); `:negative` evaluations may
+    # additionally carry an `ideal_answer` and zero-or-more
+    # `failure_categories` from `Curator::Evaluation::FAILURE_CATEGORIES`.
+    #
+    # Pass `evaluation_id:` to update an existing row in place (the
+    # Console edit-in-place flow); omit it to append a new evaluation.
+    #
+    # @return [Curator::Evaluation] the persisted row.
+    def evaluate(retrieval:, rating:, evaluator_role:, evaluator_id: nil,
+                 feedback: nil, ideal_answer: nil, failure_categories: [],
+                 evaluation_id: nil)
+      Evaluator.call(
+        retrieval:          retrieval,
+        rating:             rating,
+        evaluator_role:     evaluator_role,
+        evaluator_id:       evaluator_id,
+        feedback:           feedback,
+        ideal_answer:       ideal_answer,
+        failure_categories: failure_categories,
+        evaluation_id:      evaluation_id
       )
     end
 

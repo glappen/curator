@@ -4,6 +4,8 @@ Curator::Engine.routes.draw do
   get  "console",     to: "console#show", as: :console
   post "console/run", to: "console#run",  as: :console_run
 
+  resources :evaluations, only: %i[create]
+
   resources :knowledge_bases,
             path:   "kbs",
             param:  :slug do

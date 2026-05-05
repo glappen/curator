@@ -32,6 +32,12 @@ RSpec.describe Curator::Evaluation, type: :model do
       expect(e).not_to be_valid
       expect(e.errors[:failure_categories]).to be_present
     end
+
+    it "rejects categories on :positive ratings" do
+      e = build(:curator_evaluation, rating: "positive", failure_categories: %w[hallucination])
+      expect(e).not_to be_valid
+      expect(e.errors[:failure_categories]).to be_present
+    end
   end
 
   it "exposes a tooltip for every failure category" do

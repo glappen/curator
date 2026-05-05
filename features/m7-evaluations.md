@@ -30,9 +30,34 @@ edits.
   - `bin/reset-dummy` regenerated dummy schema cleanly.
   - Validate: 607 examples, 0 failures; rubocop no offenses.
 
+- **Phase 1 — `Curator.evaluate` + identity hooks + admin endpoint.** ✓
+  - `lib/curator/evaluator.rb` — `Curator::Evaluator.call(...)` with
+    `EVALUATOR_ROLES = %i[reviewer end_user]`. Validates rating +
+    evaluator_role (raises `ArgumentError`); accepts retrieval as
+    instance or id; `evaluation_id:` triggers in-place update.
+  - `lib/curator.rb` — `Curator.evaluate(...)` delegator.
+  - `lib/curator/configuration.rb` — `current_admin_evaluator` and
+    `current_end_user_evaluator` attrs, both default to
+    `NULL_EVALUATOR = ->(_controller) { nil }`.
+  - `app/models/curator/evaluation.rb` — pushed
+    `failure_categories_only_on_negative` validation down into the
+    model (per cross-phase regression note in this file).
+  - `app/controllers/curator/application_controller.rb` —
+    `current_admin_evaluator_id` helper method (also exposed via
+    `helper_method`) calling the configured proc with `self`.
+  - `app/controllers/curator/evaluations_controller.rb` — POST
+    creates; the same action updates in place when an
+    `evaluation_id` param is present. Returns
+    `{ id:, rating: }` JSON. Drops blank entries from
+    `failure_categories` array (Rails form quirk).
+  - `config/routes.rb` — `resources :evaluations, only: %i[create]`.
+  - `lib/generators/curator/install/templates/curator.rb.tt` —
+    documented both hooks with commented-out examples.
+  - Validate: 625 examples, 0 failures; rubocop no offenses.
+
 ## Current Work
 
-_(empty — Phase 0 done; Phase 1 next)_
+_(empty — Phase 1 done; Phase 2 next)_
 
 ## Next Steps
 
@@ -67,7 +92,7 @@ _(empty — Phase 0 done; Phase 1 next)_
      `bundle exec rubocop` no offenses; `features/implementation.md` diff
      reads cleanly.
 
-- [ ] **Phase 1 — `Curator.evaluate` service object + identity hooks +
+- [x] **Phase 1 — `Curator.evaluate` service object + identity hooks +
    admin annotate-form path.** Build the canonical write path that
    admin and host code both go through.
    - `lib/curator/evaluator.rb` — service object with single class

@@ -29,6 +29,7 @@ module Curator
     enum :rating, RATINGS.index_with(&:to_s)
 
     validate :failure_categories_are_known
+    validate :failure_categories_only_on_negative
 
     private
 
@@ -37,6 +38,13 @@ module Curator
       return if unknown.empty?
 
       errors.add(:failure_categories, "contains unknown values: #{unknown.join(', ')}")
+    end
+
+    def failure_categories_only_on_negative
+      return if Array(failure_categories).empty?
+      return if rating == "negative"
+
+      errors.add(:failure_categories, "are only allowed on :negative evaluations")
     end
   end
 end

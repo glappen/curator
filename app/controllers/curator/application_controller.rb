@@ -10,5 +10,14 @@ module Curator
     helper :all
 
     curator_authenticate_admin
+
+    helper_method :current_admin_evaluator_id
+
+    # Resolves the configured admin-evaluator block against this
+    # controller. Returns nil when the host leaves the hook at its
+    # default `->(_controller) { nil }`.
+    def current_admin_evaluator_id
+      Curator.config.current_admin_evaluator.call(self)
+    end
   end
 end

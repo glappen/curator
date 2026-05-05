@@ -14,19 +14,25 @@ module Curator
                   :query_timeout,
                   :embedding_batch_size,
                   :ocr_language,
-                  :force_ocr
+                  :force_ocr,
+                  :current_admin_evaluator,
+                  :current_end_user_evaluator
+
+    NULL_EVALUATOR = ->(_controller) { nil }
 
     def initialize
-      @extractor            = :kreuzberg
-      @trace_level          = :full
-      @max_document_size    = 50.megabytes
-      @log_queries          = true
-      @llm_retry_count      = 1
-      @query_timeout        = nil
-      @embedding_batch_size = 100
-      @ocr                  = false
-      @ocr_language         = "eng"
-      @force_ocr            = false
+      @extractor                  = :kreuzberg
+      @trace_level                = :full
+      @max_document_size          = 50.megabytes
+      @log_queries                = true
+      @llm_retry_count            = 1
+      @query_timeout              = nil
+      @embedding_batch_size       = 100
+      @ocr                        = false
+      @ocr_language               = "eng"
+      @force_ocr                  = false
+      @current_admin_evaluator    = NULL_EVALUATOR
+      @current_end_user_evaluator = NULL_EVALUATOR
     end
 
     def extractor=(value)

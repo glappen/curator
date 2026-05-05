@@ -7,7 +7,7 @@
               class:  "form filter-form",
               local:  true,
               data:   { controller: "retrievals-filter" } do |f| %>
-  <div class="filter-form__row">
+  <div class="filter-form__grid">
     <div class="field">
       <%= f.label :knowledge_base_id, "Knowledge base" %>
       <%= f.select :knowledge_base_id,
@@ -44,9 +44,7 @@
                    embedding_models,
                    { include_blank: "Any", selected: filters[:embedding_model] } %>
     </div>
-  </div>
 
-  <div class="filter-form__row">
     <div class="field">
       <%= f.label :from, "From" %>
       <%= f.date_field :from, value: filters[:from] %>
@@ -57,14 +55,14 @@
       <%= f.date_field :to, value: filters[:to] %>
     </div>
 
-    <div class="field filter-form__field--grow">
+    <div class="field">
       <%= f.label :query, "Query contains" %>
       <%= f.text_field :query, value: filters[:query] %>
     </div>
   </div>
 
-  <div class="filter-form__row filter-form__row--toggles">
-    <label class="filter-form__toggle">
+  <div class="filter-form__toggles">
+    <label>
       <%= f.check_box :unrated,
                       { checked: filters[:unrated],
                         data:    { "retrievals-filter-target": "unrated",
@@ -73,7 +71,7 @@
                       "0" %>
       Unrated only
     </label>
-    <label class="filter-form__toggle">
+    <label>
       <%= f.check_box :show_review, { checked: filters[:show_review] }, "true", "0" %>
       Show <code>console_review</code>
     </label>

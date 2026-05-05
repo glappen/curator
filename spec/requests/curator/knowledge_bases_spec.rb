@@ -72,26 +72,27 @@ RSpec.describe "Curator::KnowledgeBases", type: :request do
   end
 
   describe "GET /curator/kbs/new" do
-    it "renders the tiered form with all four fieldsets" do
+    it "renders the tiered form with all three fieldsets" do
       get "/curator/kbs/new"
 
       expect(response).to have_http_status(:ok)
       body = response.body
-      expect(body).to include("<legend>Display</legend>")
+      expect(body).to include("<legend>General</legend>")
       expect(body).to include("<legend>Retrieval</legend>")
       expect(body).to include("<legend>Advanced</legend>")
-      expect(body).to include("<legend>Identity (locked after creation)</legend>")
     end
 
-    it "renders embedding_model and slug as editable inputs" do
+    it "renders slug as an editable text input and embedding_model as an editable select" do
       get "/curator/kbs/new"
 
-      %w[embedding_model slug].each do |field|
-        tag = response.body[%r{<input[^>]+name="knowledge_base\[#{field}\]"[^>]*>}]
-        expect(tag).to be_present, "expected an <input> for #{field}"
-        expect(tag).not_to include("disabled")
-        expect(tag).not_to include("readonly")
-      end
+      slug = response.body[%r{<input[^>]+name="knowledge_base\[slug\]"[^>]*>}]
+      expect(slug).to be_present, "expected an <input> for slug"
+      expect(slug).not_to include("disabled")
+      expect(slug).not_to include("readonly")
+
+      embedding = response.body[%r{<select[^>]+name="knowledge_base\[embedding_model\]"[^>]*>}]
+      expect(embedding).to be_present, "expected a <select> for embedding_model"
+      expect(embedding).not_to include("disabled")
     end
   end
 
@@ -112,7 +113,7 @@ RSpec.describe "Curator::KnowledgeBases", type: :request do
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("error")
-      expect(response.body).to include("<legend>Display</legend>")
+      expect(response.body).to include("<legend>General</legend>")
     end
   end
 
@@ -134,7 +135,7 @@ RSpec.describe "Curator::KnowledgeBases", type: :request do
   end
 
   describe "GET /curator/kbs/:slug/edit" do
-    it "renders embedding_model and slug as disabled+readonly" do
+    it "renders slug as a disabled+readonly text input and embedding_model as a disabled select" do
       create(:curator_knowledge_base, slug: "support")
 
       get "/curator/kbs/support/edit"
@@ -142,12 +143,14 @@ RSpec.describe "Curator::KnowledgeBases", type: :request do
       expect(response).to have_http_status(:ok)
       body = response.body
 
-      %w[embedding_model slug].each do |field|
-        tag = body[%r{<input[^>]+name="knowledge_base\[#{field}\]"[^>]*>}]
-        expect(tag).to be_present, "expected an <input> for #{field}"
-        expect(tag).to include('disabled="disabled"')
-        expect(tag).to include('readonly="readonly"')
-      end
+      slug = body[%r{<input[^>]+name="knowledge_base\[slug\]"[^>]*>}]
+      expect(slug).to be_present, "expected an <input> for slug"
+      expect(slug).to include('disabled="disabled"')
+      expect(slug).to include('readonly="readonly"')
+
+      embedding = body[%r{<select[^>]+name="knowledge_base\[embedding_model\]"[^>]*>}]
+      expect(embedding).to be_present, "expected a <select> for embedding_model"
+      expect(embedding).to include('disabled="disabled"')
     end
   end
 
@@ -193,7 +196,7 @@ RSpec.describe "Curator::KnowledgeBases", type: :request do
             params: { knowledge_base: { name: "" } }
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.body).to include("<legend>Display</legend>")
+      expect(response.body).to include("<legend>General</legend>")
     end
 
     # Controller-level proof that `is_default` survives the strong-params

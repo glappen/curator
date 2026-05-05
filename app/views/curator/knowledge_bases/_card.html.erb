@@ -47,5 +47,15 @@
 
   <div class="kb-card__actions">
     <%= link_to "Edit", url.edit_knowledge_base_path(kb), class: "btn" %>
+    <%= button_to "Delete",
+                  url.knowledge_base_path(kb),
+                  method: :delete,
+                  class:  "btn btn--danger",
+                  form:   { data: { turbo_confirm:
+                    "Delete \"#{kb.name}\"? Every document in this knowledge " \
+                    "base will be permanently deleted along with its chunks, " \
+                    "embeddings, and retrieval history. To restore them you " \
+                    "would need to re-upload and re-embed every document. " \
+                    "This cannot be undone." } } %>
   </div>
 <% end %>

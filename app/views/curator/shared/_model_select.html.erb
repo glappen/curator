@@ -1,0 +1,9 @@
+<%# Shared chat / embedding model dropdown. Caller passes the form
+    builder, the field name, the grouped option hash from
+    `Curator::ModelOptions`, and the currently-selected model id. Extra
+    HTML attributes (e.g. `required:`, `disabled:`) ride on the optional
+    `html_options:` hash. %>
+<%= form.select field,
+                grouped_options_for_select(options, current),
+                {},
+                **(local_assigns[:html_options] || {}) %>

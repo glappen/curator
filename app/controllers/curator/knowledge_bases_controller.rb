@@ -13,6 +13,7 @@ module Curator
     LOCKED_PARAMS = %i[embedding_model slug].freeze
 
     before_action :set_knowledge_base, only: %i[show edit update destroy]
+    before_action :set_model_options, only: %i[new edit create update]
 
     def index
       @knowledge_bases = KnowledgeBase.order(:name, :id)
@@ -67,6 +68,16 @@ module Curator
 
     def set_knowledge_base
       @knowledge_base = KnowledgeBase.find_by!(slug: params[:slug])
+    end
+
+    # Re-resolved on every form render (including create/update validation
+    # re-renders) so the (custom)-group fallback reflects whatever model
+    # value the user last typed, not just the persisted one.
+    def set_model_options
+      current_chat      = @knowledge_base&.chat_model      || params.dig(:knowledge_base, :chat_model)
+      current_embedding = @knowledge_base&.embedding_model || params.dig(:knowledge_base, :embedding_model)
+      @chat_model_options      = ModelOptions.chat(current_chat)
+      @embedding_model_options = ModelOptions.embedding(current_embedding)
     end
 
     def create_params

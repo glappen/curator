@@ -17,5 +17,13 @@ module Curator
         all:     Curator::KnowledgeBase.order(:name)
       )
     end
+
+    # Marks a primary-nav link active when the current request is handled
+    # by one of the named controllers. Documents are nested under KBs, so
+    # both `knowledge_bases` and `documents` light up the "Knowledge bases"
+    # tab.
+    def nav_link_active?(*controller_names)
+      controller_names.map(&:to_s).include?(controller_name)
+    end
   end
 end

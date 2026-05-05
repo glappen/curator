@@ -25,6 +25,17 @@
             <%= link_to "Curator", curator.root_path %>
           </h1>
 
+          <nav class="app-nav" aria-label="Primary">
+            <%= link_to "Knowledge bases",
+                        curator.root_path,
+                        class: class_names("app-nav__link",
+                                           "app-nav__link--active" => nav_link_active?(:knowledge_bases, :documents)) %>
+            <%= link_to "Console",
+                        curator.console_path,
+                        class: class_names("app-nav__link",
+                                           "app-nav__link--active" => nav_link_active?(:console)) %>
+          </nav>
+
           <div class="app-header__slot">
             <%= render "curator/shared/kb_switcher" %>
           </div>

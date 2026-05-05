@@ -1,4 +1,8 @@
 <div class="card">
+  <p class="card__back">
+    <%= link_to "← All knowledge bases", knowledge_bases_path %>
+  </p>
+
   <h1><%= @knowledge_base.name %></h1>
   <p class="card__meta">
     <span class="text-mono"><%= @knowledge_base.slug %></span>
@@ -33,9 +37,11 @@
                   knowledge_base_path(@knowledge_base),
                   method: :delete,
                   form: { data: { turbo_confirm:
-                    "Delete \"#{@knowledge_base.name}\" and all of its " \
-                    "documents, chunks, embeddings, and retrievals? " \
-                    "This cannot be undone." } },
+                    "Delete \"#{@knowledge_base.name}\"? Every document in " \
+                    "this knowledge base will be permanently deleted along " \
+                    "with its chunks, embeddings, and retrieval history. " \
+                    "To restore them you would need to re-upload and " \
+                    "re-embed every document. This cannot be undone." } },
                   class: "btn btn--danger" %>
   </div>
 </div>

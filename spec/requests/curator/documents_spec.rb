@@ -27,8 +27,8 @@ RSpec.describe "Curator::Documents", type: :request do
       # Row actions render with the project's `.btn` design-system classes,
       # not Bootstrap-style `.button`. Locks against future class drift —
       # mismatched names would render unstyled buttons in the admin UI.
-      expect(body).to match(/class="btn"[^>]*>\s*Re-ingest/)
-      expect(body).to match(/class="btn btn--danger"[^>]*>\s*Delete/)
+      expect(body).to match(/class="btn btn--sm"[^>]*>\s*Re-ingest/)
+      expect(body).to match(/class="btn btn--sm btn--danger"[^>]*>\s*Delete/)
     end
 
     it "hides documents in the :deleting status" do

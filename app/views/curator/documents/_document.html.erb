@@ -37,12 +37,12 @@
     <%= button_to "Re-ingest",
                   routes.reingest_knowledge_base_document_path(document.knowledge_base, document),
                   method: :post,
-                  class:  "btn",
+                  class:  "btn btn--sm",
                   form:   { data: { turbo_confirm: "Re-ingest \"#{document.title}\"? This rebuilds all chunks and embeddings." } } %>
     <%= button_to "Delete",
                   routes.knowledge_base_document_path(document.knowledge_base, document),
                   method: :delete,
-                  class:  "btn btn--danger",
+                  class:  "btn btn--sm btn--danger",
                   form:   { data: { turbo_confirm: "Delete \"#{document.title}\"? This removes all chunks, embeddings, and retrieval history." } } %>
   </td>
 </tr>

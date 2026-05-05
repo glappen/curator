@@ -119,6 +119,31 @@
   gap: var(--space-3);
 }
 
+.curator-ui .app-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.curator-ui .app-nav__link {
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+}
+
+.curator-ui .app-nav__link:hover {
+  color: var(--color-text);
+  background: var(--color-surface-alt);
+}
+
+.curator-ui .app-nav__link--active {
+  color: var(--color-text);
+  background: var(--color-surface-alt);
+}
+
 .curator-ui .kb-switcher {
   display: flex;
   align-items: center;
@@ -197,6 +222,11 @@
   font-size: var(--font-size-sm);
 }
 
+.curator-ui .card__back {
+  font-size: var(--font-size-sm);
+  margin: 0 0 var(--space-3);
+}
+
 /* ---- Page header (title row with right-aligned CTA) ---- */
 .curator-ui .page-header {
   display: flex;
@@ -207,6 +237,12 @@
 }
 
 .curator-ui .page-header h1 { margin: 0; }
+
+.curator-ui .page-header__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
 
 /* ---- Cards grid (KB landing) ---- */
 .curator-ui .cards-grid {
@@ -443,6 +479,18 @@
 
 .curator-ui .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
 
+.curator-ui .btn--sm {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-sm);
+}
+
+.curator-ui .document-row__actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
 /* ---- Badges ---- */
 .curator-ui .badge {
   display: inline-flex;
@@ -530,6 +578,16 @@
   margin: 0 0 var(--space-3);
   color: var(--color-text-muted);
 }
+/* The file input inherits the global form-control styling (white surface
+   + border + full width). Inside the dashed dropzone that reads as a
+   card-within-a-card; strip the chrome so only the native "Choose Files"
+   control shows. */
+.curator-ui .upload-form__dropzone input[type="file"] {
+  background: transparent;
+  border: none;
+  padding: 0;
+  width: auto;
+}
 .curator-ui .empty-state-row td {
   text-align: center;
   padding: var(--space-5);
@@ -555,8 +613,20 @@
 }
 
 /* ---- Document show / chunk inspector (Phase 6) ---- */
-.curator-ui .document-header__title {
+.curator-ui .document-header__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
   margin: 0 0 var(--space-3);
+}
+.curator-ui .document-header__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+.curator-ui .document-header__title {
+  margin: 0;
   font-size: var(--font-size-xl);
 }
 .curator-ui .document-header__meta {

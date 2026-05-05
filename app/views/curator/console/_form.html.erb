@@ -47,8 +47,11 @@
 
     <div class="field">
       <%= f.label :chat_model %>
-      <%= f.select :chat_model,
-                   grouped_options_for_select(chat_model_options, knowledge_base.chat_model) %>
+      <%= render "curator/shared/model_select",
+                 form:    f,
+                 field:   :chat_model,
+                 options: chat_model_options,
+                 current: knowledge_base.chat_model %>
     </div>
 
     <div class="field">

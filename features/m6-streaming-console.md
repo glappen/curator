@@ -109,29 +109,21 @@ implementation.md as a living document — Phase 0 ships those edits.
    regression note (per Q6) preserved: row stays a normal
    `Curator::Retrieval` with no `origin` column.
 
+- [x] **Manual visual QA in dummy app.** Exercised `/curator/console`
+   in a browser against the dummy. Tokens stream visibly into the
+   center column (not buffered), sources populate after the LLM
+   finishes, status badge transitions idle → streaming → done,
+   threshold overrides flow into `Curator::Retrieval.last`
+   snapshot columns, and forcing a bogus chat_model surfaces the
+   failed badge with a readable error message.
+
 ## Current Work
 
-_(empty — manual visual QA in the dummy app is the only remaining
-checklist item; see Next Steps)_
+_(empty — M6 complete)_
 
 ## Next Steps
 
-- [ ] **Manual visual QA in dummy app.** Out-of-band, requires
-   running `bin/rails s` from `spec/dummy` and exercising
-   `/curator/console` in a browser. The automated smoke
-   (`spec/requests/curator/console_smoke_spec.rb`) covers wire
-   shape + persistence + frame ordering — this checklist covers
-   the things only a real browser sees.
-   - Hit `/curator/console`. Pick a KB, type a query, hit Run.
-   - Tokens stream into the center column visibly (not buffered
-     until the end).
-   - Sources populate in the right column after the LLM finishes.
-   - Status badge transitions idle → streaming → done.
-   - Tweak the threshold, hit Run again — new run uses the
-     overridden value (verify via `Curator::Retrieval.last`
-     snapshot columns in `bin/rails c`).
-   - Force a failure (point the KB at a bogus chat_model) — UI
-     shows the failed badge with a readable error message.
+_(none — milestone closed)_
 
 ## Validation Strategy
 

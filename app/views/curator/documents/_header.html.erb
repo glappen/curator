@@ -7,9 +7,34 @@
 <%
   kb     = document.knowledge_base
   counts = document.chunk_status_counts(embedding_model: kb.embedding_model)
+  # Engine url helpers reached for directly so Turbo broadcasts — which
+  # render through the host app's ApplicationController.renderer — can
+  # rebuild the header without crashing on missing route helpers. Same
+  # workaround the documents row partial uses.
+  routes = Curator::Engine.routes.url_helpers
 %>
-<%= turbo_frame_tag dom_id(document, :header), class: "document-header" do %>
-  <h1 class="document-header__title"><%= document.title %></h1>
+<%# `target: "_top"` so the Re-ingest / Delete `button_to` forms break out
+    of this frame — both controller actions redirect to the documents index,
+    which has no matching frame and would otherwise render "Content missing".
+    Embedding broadcasts replacing this frame still work; they target the
+    frame by dom_id over Cable, not via in-page form navigation. %>
+<%= turbo_frame_tag dom_id(document, :header), class: "document-header", target: "_top" do %>
+  <div class="document-header__top">
+    <h1 class="document-header__title"><%= document.title %></h1>
+
+    <div class="document-header__actions">
+      <%= button_to "Re-ingest",
+                    routes.reingest_knowledge_base_document_path(document.knowledge_base, document),
+                    method: :post,
+                    class:  "btn",
+                    form:   { data: { turbo_confirm: "Re-ingest \"#{document.title}\"? This rebuilds all chunks and embeddings." } } %>
+      <%= button_to "Delete",
+                    routes.knowledge_base_document_path(document.knowledge_base, document),
+                    method: :delete,
+                    class:  "btn btn--danger",
+                    form:   { data: { turbo_confirm: "Delete \"#{document.title}\"? This removes all chunks, embeddings, and retrieval history." } } %>
+    </div>
+  </div>
 
   <dl class="document-header__meta">
     <div>

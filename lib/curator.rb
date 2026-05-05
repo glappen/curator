@@ -26,6 +26,7 @@ require "curator/prompt/templates"
 require "curator/prompt/assembler"
 require "curator/asker"
 require "curator/reembed"
+require "curator/model_options"
 
 # Note: `curator/engine` and the `ruby_llm` / `neighbor` requires live in
 # lib/curator-rails.rb, which Bundler.require loads *after* Rails boots.

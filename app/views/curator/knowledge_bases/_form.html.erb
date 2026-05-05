@@ -4,7 +4,7 @@
   <%= render "curator/shared/form_errors", model: knowledge_base %>
 
   <fieldset>
-    <legend>Display</legend>
+    <legend>General</legend>
 
     <div class="field">
       <%= f.label :name %>
@@ -12,8 +12,39 @@
     </div>
 
     <div class="field">
+      <%= f.label :slug %>
+      <%= f.text_field :slug,
+                       required: true,
+                       disabled: locked,
+                       readonly: locked %>
+      <p class="field__hint">
+        URL identifier. Lowercase letters, digits, dashes, underscores.
+        <% if locked %>Cannot be changed after creation.<% end %>
+      </p>
+    </div>
+
+    <div class="field">
       <%= f.label :description %>
       <%= f.text_area :description, rows: 3 %>
+    </div>
+
+    <div class="field">
+      <%= f.label :embedding_model %>
+      <%= render "curator/shared/model_select",
+                 form:         f,
+                 field:        :embedding_model,
+                 options:      @embedding_model_options,
+                 current:      knowledge_base.embedding_model,
+                 html_options: { required: true, disabled: locked } %>
+      <p class="field__hint">
+        <% if locked %>
+          Cannot be changed after creation. Recreate the KB to switch the
+          embedding model, or run <code>curator:reembed</code> to migrate.
+        <% else %>
+          Vector dimension is fixed at install time; switching models later
+          requires a re-embed.
+        <% end %>
+      </p>
     </div>
 
     <div class="field">
@@ -86,7 +117,11 @@
 
     <div class="field">
       <%= f.label :chat_model %>
-      <%= f.text_field :chat_model %>
+      <%= render "curator/shared/model_select",
+                 form:    f,
+                 field:   :chat_model,
+                 options: @chat_model_options,
+                 current: knowledge_base.chat_model %>
     </div>
 
     <div class="field">
@@ -94,39 +129,6 @@
       <%= f.text_area :system_prompt, rows: 6 %>
       <p class="field__hint">
         Optional. Prepended to every Q&amp;A prompt for this knowledge base.
-      </p>
-    </div>
-  </fieldset>
-
-  <fieldset>
-    <legend>Identity (locked after creation)</legend>
-
-    <div class="field">
-      <%= f.label :slug %>
-      <%= f.text_field :slug,
-                       required: true,
-                       disabled: locked,
-                       readonly: locked %>
-      <p class="field__hint">
-        URL identifier. Lowercase letters, digits, dashes, underscores.
-        <% if locked %>Cannot be changed after creation.<% end %>
-      </p>
-    </div>
-
-    <div class="field">
-      <%= f.label :embedding_model %>
-      <%= f.text_field :embedding_model,
-                       required: true,
-                       disabled: locked,
-                       readonly: locked %>
-      <p class="field__hint">
-        <% if locked %>
-          Cannot be changed after creation. Recreate the KB to switch the
-          embedding model, or run <code>curator:reembed</code> to migrate.
-        <% else %>
-          Vector dimension is fixed at install time; switching models later
-          requires a re-embed.
-        <% end %>
       </p>
     </div>
   </fieldset>

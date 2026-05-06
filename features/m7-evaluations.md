@@ -222,10 +222,82 @@ edits.
       preserves filter state; empty-state copy.
   - Validate: 641 examples, 0 failures; rubocop no offenses.
 
+- **Phase 5 — Exporters + rake tasks + buttons.** ✓
+  - `app/services/curator/retrievals/exporter.rb` and
+    `app/services/curator/evaluations/exporter.rb` — both expose
+    `.stream(io:, format:, filters:)`. Service objects live under
+    `app/services/` so Zeitwerk autoloads them; an earlier draft put
+    them in `lib/curator/...` and required them from `lib/curator.rb`,
+    which broke in dev mode (the `require` only fires on server boot,
+    so the running server didn't pick them up after a code change to
+    the gem and `Curator::Retrievals::Exporter` came back as
+    `uninitialized constant`, manifesting as empty CSV downloads).
+    CSV is written line-by-line via
+    `io.puts(CSV.generate_line(...))` so a downstream live stream
+    surfaces rows incrementally; JSON is emitted as a streamed array
+    literal (open bracket, comma between objects, close bracket) so
+    the same `find_each` walk powers both formats. Answer text is
+    truncated at 500 chars (`ANSWER_TRUNCATION`). Failure categories
+    serialize as `;`-joined string in CSV / array in JSON.
+  - Filter logic mirrors the controllers'. Retrievals exporter
+    additionally accepts `:kb_slug` (joins to KBs) for the rake/CLI
+    path where the caller has a slug rather than an id; evaluations
+    exporter reuses the controller's `:kb`/`:since`/`:until` keys.
+  - `RetrievalsController#export` and `EvaluationsController#export`
+    `include ActionController::Live` and pipe the CSV exporter
+    directly into `response.stream` so a multi-MB export surfaces
+    row-by-row instead of sitting in worker heap. JSON is a single
+    document — incrementally streaming an array literal to the browser
+    is more plumbing than payoff at single-document scale, so JSON is
+    buffered and sent via `send_data`. CSV headers are set
+    (`Content-Type`, `Content-Disposition`, `X-Accel-Buffering: no`,
+    `Cache-Control: no-cache`) before the first write because the
+    response buffer seals headers on first flush; `ETag` middleware
+    would otherwise buffer the whole response to compute the digest
+    and defeat the streaming property. `response.stream.close` runs
+    in `ensure` so a mid-export exception still terminates the
+    response cleanly.
+  - **Gotcha pinned in code:** the exporters use `io.write` (not
+    `io.puts`) because `ActionController::Live::Buffer` implements
+    `write` but not `puts`, and exceptions on the Live action thread
+    surface as a silent empty body in tests. `CSV.generate_line`
+    already terminates with `\n`, so `write` is also semantically
+    identical for the `StringIO` rake-task path.
+  - Routes — `collection { get :export }` on both `:retrievals` and
+    `:evaluations` resources.
+  - Views — "Export CSV" / "Export JSON" buttons on both index pages,
+    carrying the current filter querystring forward via `@filters`
+    (rejecting nil/blank values so non-filter junk like `page=` and
+    `_method=` doesn't leak into the export URL).
+  - `lib/curator/tasks/export.rb` — shared rake-task body that maps
+    the CLI subset (`FORMAT`, `KB`, `SINCE`) onto the per-exporter
+    filter keys (retrievals: `:kb_slug`/`:from`; evaluations: `:kb`/
+    `:since`). Aborts on missing/invalid `FORMAT`. Used by both
+    `curator:retrievals:export` and `curator:evaluations:export`.
+  - `csv` added as an explicit gem dependency (left default-gems in
+    Ruby 3.4).
+  - Specs:
+    - `spec/curator/retrievals/exporter_spec.rb` (14 examples) — CSV
+      header, JSON shape, filter pass-through (KB id, KB slug, status,
+      ILIKE query, from-date, malformed-date drop), incremental-write
+      ordering, truncation, `show_review` toggle, unknown-format
+      raise.
+    - `spec/curator/evaluations/exporter_spec.rb` (14 examples) —
+      same shape; semicolon vs array failure-categories serialization;
+      ANY-of failure-categories filter; evaluator_id ILIKE; rating /
+      evaluator_role / since filters.
+    - `spec/requests/curator/retrievals_spec.rb` and
+      `evaluations_spec.rb` — export action returns CSV with
+      `text/csv` + `Content-Disposition: attachment`; JSON variant
+      round-trips and respects filter querystring.
+    - `spec/tasks/curator_rake_spec.rb` — both rake tasks invoke
+      their exporter, respect `KB`/`FORMAT`, abort on bogus FORMAT.
+  - Validate: 716 examples, 0 failures; rubocop no offenses.
+
 ## Current Work
 
-_(empty — Phases 0–4 done. Phase 5 (exporters) and Phase 6
-(manual QA) come next.)_
+_(empty — Phases 0–5 done. Phase 6 (manual QA in dummy app) comes
+next.)_
 
 ## Next Steps
 
@@ -408,14 +480,14 @@ _(empty — Phases 0–4 done. Phase 5 (exporters) and Phase 6
      filter by `:negative` + `:hallucination`, see only matching evals,
      click through to detail.
 
-- [ ] **Phase 5 — Exporters + rake tasks + buttons.** Two service
+- [x] **Phase 5 — Exporters + rake tasks + buttons.** Two service
    objects, two rake tasks, two admin export buttons.
-   - `lib/curator/retrievals/exporter.rb` — `.stream(io:, format:,
+   - `app/services/curator/retrievals/exporter.rb` — `.stream(io:, format:,
      filters:)` writes CSV via line-by-line `io.puts` (lazy) or single
      JSON document; columns include retrieval_id, query, answer
      (truncated to 500 chars), KB slug, chat_model, embedding_model,
      status, origin, retrieved_hit_count, eval_count, created_at.
-   - `lib/curator/evaluations/exporter.rb` — `.stream(io:, format:,
+   - `app/services/curator/evaluations/exporter.rb` — `.stream(io:, format:,
      filters:)` columns from implementation.md: retrieval_id, query,
      answer (truncated), KB, chat_model, embedding_model, rating,
      feedback, ideal_answer, failure_categories (semicolon-joined CSV /
@@ -663,6 +735,16 @@ is explicitly deferred to v2 per implementation.md).
   carry `:hallucination`") deferred per implementation.md.
 - **A/B comparison view** — already deferred.
 - **LLM-as-judge `curator:eval:run`** — already deferred.
+- **Align controller and exporter filter-key naming.** The retrievals
+  exporter accepts `:kb_slug`/`:from`/`:to` while the retrievals
+  controller uses `:knowledge_base_id`/`:from`/`:to`; the evaluations
+  exporter accepts `:kb`/`:since`/`:until` to mirror the evaluations
+  controller. The rake-task dispatcher (`Curator::Tasks::Export`) reads
+  `Exporter::CLI_KB_KEY` / `CLI_SINCE_KEY` to map ENV args onto whichever
+  shape each exporter expects, so a third exporter "just works" — but a
+  v2 cleanup could pick a single contract (probably the controller's)
+  and have the exporter reuse it directly, deleting the indirection.
+  Not blocking M7.
 
 ## Ideation Notes
 

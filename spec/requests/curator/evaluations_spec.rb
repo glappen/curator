@@ -389,4 +389,45 @@ RSpec.describe "Curator::EvaluationsController", type: :request do
       expect(response.body).to       include(%(value="#{original.id}"))
     end
   end
+
+  describe "GET /curator/evaluations/export" do
+    let!(:export_kb)        { create(:curator_knowledge_base, slug: "exp-kb", is_default: false) }
+    let!(:export_retrieval) { create(:curator_retrieval, knowledge_base: export_kb, query: "alpha question") }
+    let!(:eval_row) do
+      create(:curator_evaluation, retrieval: export_retrieval, rating: "negative",
+                                  failure_categories: %w[hallucination])
+    end
+
+    it "streams CSV with attachment headers" do
+      get "/curator/evaluations/export", params: { format: "csv" }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.content_type).to start_with("text/csv")
+      expect(response.headers["Content-Disposition"]).to include("attachment")
+      expect(response.headers["Content-Disposition"]).to include("curator-evaluations-")
+      expect(response.body).to include("alpha question")
+      expect(response.body).to include("hallucination")
+    end
+
+    it "renders JSON with array body when format=json" do
+      get "/curator/evaluations/export", params: { format: "json" }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.content_type).to start_with("application/json")
+      parsed = JSON.parse(response.body)
+      expect(parsed).to be_an(Array)
+      expect(parsed.first["failure_categories"]).to eq([ "hallucination" ])
+    end
+
+    it "passes filter querystring through to the exporter" do
+      other_eval = create(:curator_evaluation, retrieval: export_retrieval, rating: "positive")
+
+      get "/curator/evaluations/export", params: { format: "json", rating: "positive" }
+      parsed = JSON.parse(response.body)
+
+      expect(parsed.size).to eq(1)
+      expect(parsed.first["rating"]).to eq("positive")
+      expect(parsed.first["retrieval_id"]).to eq(other_eval.retrieval_id)
+    end
+  end
 end

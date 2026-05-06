@@ -4,8 +4,12 @@ Curator::Engine.routes.draw do
   get  "console",     to: "console#show", as: :console
   post "console/run", to: "console#run",  as: :console_run
 
-  resources :evaluations, only: %i[index create]
-  resources :retrievals,  only: %i[index show]
+  resources :evaluations, only: %i[index create] do
+    collection { get :export }
+  end
+  resources :retrievals,  only: %i[index show] do
+    collection { get :export }
+  end
 
   resources :knowledge_bases,
             path:   "kbs",

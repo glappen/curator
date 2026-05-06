@@ -4,6 +4,17 @@
     and expand the matching eval. %>
 <div class="page-header">
   <h1>Evaluations</h1>
+  <%# Export links carry the current filter querystring forward so the
+      download matches what the operator is actively viewing. %>
+  <% export_filters = @filters.reject { |_, v| v.blank? } %>
+  <div class="page-header__actions">
+    <%= link_to "Export CSV",
+                export_evaluations_path(export_filters.merge(format: :csv)),
+                class: "btn" %>
+    <%= link_to "Export JSON",
+                export_evaluations_path(export_filters.merge(format: :json)),
+                class: "btn" %>
+  </div>
 </div>
 
 <%= form_with url: evaluations_path, method: :get, class: "form filter-form" do |f| %>

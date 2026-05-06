@@ -230,4 +230,43 @@ RSpec.describe "Curator::RetrievalsController", type: :request do
       expect(response).to have_http_status(:not_found)
     end
   end
+
+  # The export action shares filter parsing with #index, so we cover the
+  # response shape / disposition / filter pass-through and trust the
+  # exporter spec for content-level coverage.
+  describe "GET /curator/retrievals/export" do
+    let!(:adhoc) do
+      create(:curator_retrieval, knowledge_base: kb, query: "alpha question", origin: "adhoc")
+    end
+    let!(:review_run) do
+      create(:curator_retrieval, knowledge_base: kb, query: "gamma question", origin: "console_review")
+    end
+
+    it "streams a CSV with the right content-type and filename" do
+      get "/curator/retrievals/export", params: { format: "csv" }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.content_type).to start_with("text/csv")
+      expect(response.headers["Content-Disposition"]).to include("attachment")
+      expect(response.headers["Content-Disposition"]).to include("curator-retrievals-")
+      expect(response.body).to include("alpha question")
+      expect(response.body).not_to include("gamma question") # console_review hidden
+    end
+
+    it "honors the show_review filter" do
+      get "/curator/retrievals/export", params: { format: "csv", show_review: "true" }
+      expect(response.body).to include("gamma question")
+    end
+
+    it "renders JSON when format=json" do
+      get "/curator/retrievals/export", params: { format: "json" }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.content_type).to start_with("application/json")
+      expect(response.headers["Content-Disposition"]).to include("attachment")
+      parsed = JSON.parse(response.body)
+      expect(parsed).to be_an(Array)
+      expect(parsed.map { |r| r["query"] }).to include("alpha question")
+    end
+  end
 end

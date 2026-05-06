@@ -8,6 +8,19 @@
       (<code>:console_review</code> rows hidden — toggle below to show)
     <% end %>
   </p>
+  <%# Export links carry the current filter querystring forward so the
+      download matches what the operator is actively viewing. Built
+      from `@filters` rather than `params` so non-filter junk (page,
+      per, _method...) doesn't leak into the export URL. %>
+  <% export_filters = @filters.reject { |_, v| v.nil? } %>
+  <div class="page-header__actions">
+    <%= link_to "Export CSV",
+                export_retrievals_path(export_filters.merge(format: :csv)),
+                class: "btn" %>
+    <%= link_to "Export JSON",
+                export_retrievals_path(export_filters.merge(format: :json)),
+                class: "btn" %>
+  </div>
 </div>
 
 <%= render "filter_form",

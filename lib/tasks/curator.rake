@@ -146,10 +146,28 @@ namespace :curator do
     Curator.reingest(document)
     puts "Re-enqueued ingest for document=#{document.id} (#{document.title.inspect})"
   end
-end
 
-# Planned (see features/implementation.md):
-#   curator:evaluations:export KB=... FORMAT=csv|json
-#   curator:stats
-#   curator:vacuum KB=...
-#   curator:build_assets
+  namespace :retrievals do
+    desc "Export retrievals to STDOUT. " \
+         "FORMAT=<csv|json> [KB=<slug>] [SINCE=<iso8601>]"
+    task export: :environment do
+      Curator::Tasks::Export.run(
+        exporter: Curator::Retrievals::Exporter,
+        env:      ENV,
+        io:       $stdout
+      )
+    end
+  end
+
+  namespace :evaluations do
+    desc "Export evaluations to STDOUT. " \
+         "FORMAT=<csv|json> [KB=<slug>] [SINCE=<iso8601>]"
+    task export: :environment do
+      Curator::Tasks::Export.run(
+        exporter: Curator::Evaluations::Exporter,
+        env:      ENV,
+        io:       $stdout
+      )
+    end
+  end
+end

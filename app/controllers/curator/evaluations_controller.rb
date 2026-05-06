@@ -19,6 +19,9 @@ module Curator
   # explicitly deferred to v2+ (see implementation.md "Deferred").
   class EvaluationsController < ApplicationController
     include Curator::PaginationHelper
+    # `ActionController::Live` enables `response.stream.write` for the
+    # `#export` action — see `RetrievalsController` for the rationale.
+    include ActionController::Live
 
     FILTER_PARAMS = %i[
       kb since until rating evaluator_role evaluator_id
@@ -32,6 +35,43 @@ module Curator
       @evaluations         = @page.records.includes(retrieval: :knowledge_base)
       @kb_options          = Curator::KnowledgeBase.order(:name).pluck(:name, :slug)
       @chat_model_options  = Curator::Evaluation.distinct_chat_models
+    end
+
+    # CSV streams row-by-row to `response.stream`; JSON is buffered
+    # and sent via `send_data`. See `RetrievalsController#export` for
+    # the streaming rationale and the header dance.
+    def export
+      format   = params[:format].to_s.presence || "csv"
+      filename = "curator-evaluations-#{Time.current.strftime('%Y%m%dT%H%M%S')}.#{format}"
+
+      case format
+      when "csv"
+        response.headers["Content-Type"]        = "text/csv; charset=utf-8"
+        response.headers["Content-Disposition"] = ActionDispatch::Http::ContentDisposition.format(
+          disposition: "attachment", filename: filename
+        )
+        response.headers["X-Accel-Buffering"]   = "no"
+        response.headers["Cache-Control"]       = "no-cache"
+        begin
+          # See `RetrievalsController#export` — the live action thread
+          # needs an explicit DB checkout or queries silently come
+          # back empty in production.
+          ActiveRecord::Base.connection_pool.with_connection do
+            Curator::Evaluations::Exporter.stream(io: response.stream,
+                                                  format: "csv",
+                                                  filters: filter_params)
+          end
+        ensure
+          response.stream.close
+        end
+      when "json"
+        io = StringIO.new
+        Curator::Evaluations::Exporter.stream(io: io, format: "json", filters: filter_params)
+        send_data io.string, type: "application/json",
+                             disposition: "attachment", filename: filename
+      else
+        head :unsupported_media_type
+      end
     end
 
     def create

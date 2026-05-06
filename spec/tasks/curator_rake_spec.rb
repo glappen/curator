@@ -2,6 +2,8 @@ require "rails_helper"
 require "rake"
 require "tmpdir"
 require "fileutils"
+require "csv"
+require "json"
 
 RSpec.describe "curator rake tasks" do
   include ActiveJob::TestHelper
@@ -369,6 +371,101 @@ RSpec.describe "curator rake tasks" do
     it "raises ActiveRecord::RecordNotFound on an unknown document id" do
       ENV["DOCUMENT"] = "999999999"
       expect { silently { task.invoke } }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+  end
+
+  describe "curator:retrievals:export" do
+    let(:task) { Rake::Task["curator:retrievals:export"] }
+    let!(:kb)  { create(:curator_knowledge_base, slug: "exp-kb", is_default: false) }
+    let!(:other_kb) { create(:curator_knowledge_base, slug: "other-kb", is_default: false) }
+    let!(:retrieval) { create(:curator_retrieval, knowledge_base: kb, query: "alpha question") }
+    let!(:other_retrieval) { create(:curator_retrieval, knowledge_base: other_kb, query: "delta question") }
+
+    after do
+      ENV.delete("FORMAT"); ENV.delete("KB"); ENV.delete("SINCE")
+      task.reenable
+    end
+
+    it "writes CSV to STDOUT with FORMAT=csv" do
+      ENV["FORMAT"] = "csv"
+      out, _err = silently { task.invoke }
+
+      expect(out.lines.first).to include("retrieval_id")
+      expect(out).to include("alpha question")
+      expect(out).to include("delta question")
+    end
+
+    it "filters by KB slug" do
+      ENV["FORMAT"] = "csv"
+      ENV["KB"]     = "exp-kb"
+      out, _err = silently { task.invoke }
+
+      expect(out).to include("alpha question")
+      expect(out).not_to include("delta question")
+    end
+
+    it "writes a JSON document with FORMAT=json" do
+      ENV["FORMAT"] = "json"
+      out, _err = silently { task.invoke }
+
+      parsed = JSON.parse(out)
+      expect(parsed).to be_an(Array)
+      expect(parsed.map { |r| r["query"] }).to contain_exactly("alpha question", "delta question")
+    end
+
+    it "aborts when FORMAT is missing or unsupported" do
+      ENV["FORMAT"] = "xml"
+      expect { silently { task.invoke } }.to raise_error(SystemExit)
+    end
+  end
+
+  describe "curator:evaluations:export" do
+    let(:task)      { Rake::Task["curator:evaluations:export"] }
+    let!(:kb)       { create(:curator_knowledge_base, slug: "exp-kb", is_default: false) }
+    let!(:other_kb) { create(:curator_knowledge_base, slug: "other-kb", is_default: false) }
+    let!(:retrieval) { create(:curator_retrieval, knowledge_base: kb, query: "alpha question") }
+    let!(:eval_row) do
+      create(:curator_evaluation, retrieval: retrieval, rating: "negative",
+                                  failure_categories: %w[hallucination])
+    end
+
+    after do
+      ENV.delete("FORMAT"); ENV.delete("KB"); ENV.delete("SINCE")
+      task.reenable
+    end
+
+    it "writes CSV to STDOUT with the documented column shape" do
+      ENV["FORMAT"] = "csv"
+      out, _err = silently { task.invoke }
+
+      header = CSV.parse_line(out.lines.first)
+      expect(header).to include("retrieval_id", "rating", "failure_categories")
+      expect(out).to include("hallucination")
+    end
+
+    it "filters by KB slug" do
+      other_retrieval = create(:curator_retrieval, knowledge_base: other_kb, query: "delta question")
+      create(:curator_evaluation, retrieval: other_retrieval, rating: "positive")
+
+      ENV["FORMAT"] = "csv"
+      ENV["KB"]     = "exp-kb"
+      out, _err = silently { task.invoke }
+
+      expect(out).to include("alpha question")
+      expect(out).not_to include("delta question")
+    end
+
+    it "writes a JSON document with FORMAT=json" do
+      ENV["FORMAT"] = "json"
+      out, _err = silently { task.invoke }
+
+      parsed = JSON.parse(out)
+      expect(parsed.first["failure_categories"]).to eq([ "hallucination" ])
+    end
+
+    it "aborts on bogus FORMAT" do
+      ENV["FORMAT"] = "xml"
+      expect { silently { task.invoke } }.to raise_error(SystemExit)
     end
   end
 end

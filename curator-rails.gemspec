@@ -35,4 +35,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "neighbor",    ">= 0.5"
   spec.add_dependency "pg",          ">= 1.5"
   spec.add_dependency "turbo-rails", ">= 2.0"
+  # `csv` left default-gems in Ruby 3.4. The exporter services
+  # write CSV via the stdlib API, so depend on it explicitly.
+  spec.add_dependency "csv",         ">= 3.2"
 end

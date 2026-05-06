@@ -9,6 +9,14 @@ module Curator
   # back button restores the operator's view without server-side state.
   class RetrievalsController < ApplicationController
     include Curator::PaginationHelper
+    # `ActionController::Live` enables `response.stream.write` for the
+    # `#export` action so a multi-MB CSV download surfaces row-by-row
+    # instead of buffering the full result set in the worker's heap.
+    # Other actions in this controller don't touch the stream and run
+    # under the normal request lifecycle. The thread-per-request
+    # implication is fine for admin actions; the heap pressure relief
+    # on a long export window is worth it.
+    include ActionController::Live
 
     # Free-text query is `ILIKE`-matched against the persisted query
     # column. Cap the length so a paste of an entire transcript can't
@@ -31,6 +39,56 @@ module Curator
       @knowledge_bases  = KnowledgeBase.order(:name, :id)
       @chat_models      = scope_models(:chat_model)
       @embedding_models = scope_models(:embedding_model)
+    end
+
+    # CSV streams row-by-row to `response.stream` so a large export
+    # doesn't buffer the full result set in worker heap. JSON is a
+    # single document — streaming an array literal incrementally to
+    # the browser is more plumbing than payoff at single-document
+    # scale, so it's buffered and sent via `send_data`.
+    def export
+      format   = params[:format].to_s.presence || "csv"
+      filename = "curator-retrievals-#{Time.current.strftime('%Y%m%dT%H%M%S')}.#{format}"
+
+      case format
+      when "csv"
+        # Headers MUST be set before the first `response.stream.write`
+        # — once the response buffer flushes, headers are sealed.
+        response.headers["Content-Type"]        = "text/csv; charset=utf-8"
+        response.headers["Content-Disposition"] = ActionDispatch::Http::ContentDisposition.format(
+          disposition: "attachment", filename: filename
+        )
+        # Defeats nginx response buffering when this is reverse-proxied.
+        response.headers["X-Accel-Buffering"]   = "no"
+        # `ETag` middleware would buffer the whole response to compute
+        # the digest, defeating the streaming property — explicitly
+        # signal a non-cacheable streamed body.
+        response.headers["Cache-Control"]       = "no-cache"
+        begin
+          # `ActionController::Live` runs the action body in a separate
+          # thread, which does not inherit the request thread's
+          # checked-out database connection. Without this `with_connection`
+          # block, ActiveRecord queries on the streaming thread silently
+          # return empty results in some pool configurations (the spec
+          # suite happens to work because transactional fixtures keep
+          # the test connection alive across threads — production does
+          # not).
+          ActiveRecord::Base.connection_pool.with_connection do
+            Curator::Retrievals::Exporter.stream(io: response.stream,
+                                                 format: "csv",
+                                                 filters: filter_params)
+          end
+        ensure
+          response.stream.close
+        end
+      when "json"
+        io = StringIO.new
+        Curator::Retrievals::Exporter.stream(io: io, format: "json", filters: filter_params)
+        send_data io.string, type: "application/json",
+                             disposition: "attachment", filename: filename
+      else
+        head :unsupported_media_type
+      end
     end
 
     def show

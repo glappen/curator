@@ -2,6 +2,7 @@ PATH
   remote: .
   specs:
     curator-rails (0.1.0)
+      csv (>= 3.2)
       neighbor (>= 0.5)
       pg (>= 1.5)
       rails (>= 7.0)
@@ -97,6 +98,7 @@ GEM
       bigdecimal
       rexml
     crass (1.0.6)
+    csv (3.3.5)
     date (3.5.1)
     debug (1.11.1)
       irb (~> 1.10)
@@ -133,9 +135,6 @@ GEM
       rdoc (>= 4.0.0)
       reline (>= 0.4.2)
     json (2.19.4)
-    kreuzberg (4.9.4)
-      rb_sys (~> 0.9.119)
-      sorbet-runtime (~> 0.5)
     kreuzberg (4.9.4-aarch64-linux)
       sorbet-runtime (~> 0.5)
     kreuzberg (4.9.4-arm64-darwin)
@@ -156,7 +155,6 @@ GEM
       net-smtp
     marcel (1.1.0)
     mini_mime (1.1.5)
-    mini_portile2 (2.8.9)
     minitest (6.0.5)
       drb (~> 2.0)
       prism (~> 1.5)
@@ -175,20 +173,11 @@ GEM
     net-smtp (0.5.1)
       net-protocol
     nio4r (2.7.5)
-    nokogiri (1.19.2)
-      mini_portile2 (~> 2.8.2)
-      racc (~> 1.4)
     nokogiri (1.19.2-aarch64-linux-gnu)
       racc (~> 1.4)
     nokogiri (1.19.2-aarch64-linux-musl)
       racc (~> 1.4)
-    nokogiri (1.19.2-arm-linux-gnu)
-      racc (~> 1.4)
-    nokogiri (1.19.2-arm-linux-musl)
-      racc (~> 1.4)
     nokogiri (1.19.2-arm64-darwin)
-      racc (~> 1.4)
-    nokogiri (1.19.2-x86_64-darwin)
       racc (~> 1.4)
     nokogiri (1.19.2-x86_64-linux-gnu)
       racc (~> 1.4)
@@ -202,7 +191,6 @@ GEM
     pg (1.6.3-aarch64-linux)
     pg (1.6.3-aarch64-linux-musl)
     pg (1.6.3-arm64-darwin)
-    pg (1.6.3-x86_64-darwin)
     pg (1.6.3-x86_64-linux)
     pg (1.6.3-x86_64-linux-musl)
     pp (0.6.3)
@@ -260,9 +248,6 @@ GEM
       zeitwerk (~> 2.6)
     rainbow (3.1.1)
     rake (13.4.2)
-    rake-compiler-dock (1.12.0)
-    rb_sys (0.9.127)
-      rake-compiler-dock (= 1.12.0)
     rdoc (7.2.0)
       erb
       psych (>= 4.0.0)
@@ -358,11 +343,8 @@ PLATFORMS
   aarch64-linux
   aarch64-linux-gnu
   aarch64-linux-musl
-  arm-linux-gnu
-  arm-linux-musl
   arm64-darwin
-  ruby
-  x86_64-darwin
+  x86_64-linux
   x86_64-linux-gnu
   x86_64-linux-musl
 

@@ -63,8 +63,8 @@ RSpec.describe "Curator Q&A end-to-end smoke", type: :request do
       expect(row).to                    be_success
       expect(row.chat_id).to            eq(chat.id)
       expect(row.message_id).to         eq(assistant_msg.id)
-      expect(row.system_prompt_text).to include("[1] From")
-      expect(row.system_prompt_hash).to match(/\A[0-9a-f]{64}\z/)
+      expect(row.system_prompt_override).to be_nil
+      expect(row.system_prompt_hash).to     match(/\A[0-9a-f]{64}\z/)
       expect(row.strict_grounding).to   be true
       expect(row.include_citations).to  be true
       expect(row.chat_model).to         eq(default_kb.chat_model)
@@ -164,14 +164,21 @@ RSpec.describe "Curator Q&A end-to-end smoke", type: :request do
 
       row = Curator::Retrieval.where(knowledge_base_id: no_cite_kb.id).sole
       expect(row.include_citations).to be false
-      expect(row.system_prompt_text)
+      # The assembled prompt isn't stored verbatim — re-derive it via the
+      # snapshot pathway (Assembler against the persisted hits + KB) to
+      # verify the non-citing template was selected.
+      assembled = Curator::Prompt::Assembler.new.call(
+        kb:   row.knowledge_base,
+        hits: row.retrieval_hits.order(:rank)
+      )
+      expect(assembled[:system_prompt_text])
         .to start_with(Curator::Prompt::Templates::DEFAULT_INSTRUCTIONS_WITHOUT_CITATIONS)
       # The citing template's `[N] markers that match the numbered context
       # entries below.` line must not appear when include_citations is off.
-      expect(row.system_prompt_text).not_to include("[N] markers")
+      expect(assembled[:system_prompt_text]).not_to include("[N] markers")
       # Context block is still Curator-built, so hits still render with
       # `[<rank>] From` headers — only the *instructions* half changes.
-      expect(row.system_prompt_text).to include("[1] From")
+      expect(assembled[:system_prompt_text]).to include("[1] From")
     end
   end
 end

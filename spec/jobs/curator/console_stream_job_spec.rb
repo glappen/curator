@@ -135,7 +135,10 @@ RSpec.describe Curator::ConsoleStreamJob, :broadcasts, type: :job do
 
     llm_step = row.retrieval_steps.find_by(step_type: "llm_call")
     expect(llm_step.payload["streamed"]).to be true
-    expect(row.system_prompt_text).to include("[1] From")
+    # No operator override on the Console run; the assembled prompt the
+    # LLM saw is reflected via the hash, not stored verbatim.
+    expect(row.system_prompt_override).to be_nil
+    expect(row.system_prompt_hash).to     match(/\A[0-9a-f]{64}\z/)
 
     assistant_msg = Chat.find(row.chat_id).messages.find_by(role: :assistant)
     expect(assistant_msg.content).to eq(deltas.join)

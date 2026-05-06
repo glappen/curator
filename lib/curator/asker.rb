@@ -120,8 +120,8 @@ module Curator
       end
 
       retrieval_row&.update!(
-        system_prompt_text: result[:system_prompt_text],
-        system_prompt_hash: result[:system_prompt_hash]
+        system_prompt_override: @system_prompt_override,
+        system_prompt_hash:     result[:system_prompt_hash]
       )
       result
     end

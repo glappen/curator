@@ -164,6 +164,27 @@ RSpec.describe "Curator::RetrievalsController", type: :request do
       )
     end
 
+    it "omits system_prompt= from the Re-run link when no operator override was used" do
+      get "/curator/retrievals/#{retrieval.id}"
+
+      # When the original retrieval used the KB / template default (no
+      # operator override), there's nothing to round-trip — the re-run
+      # should pick up whatever `kb.system_prompt` is at re-run time. Also
+      # keeps the URL well under Puma's 10 KB QUERY_STRING limit.
+      rerun_link = response.body[%r{href="(/curator/kbs/default/console\?[^"]+)"}, 1]
+      expect(rerun_link).not_to be_nil
+      expect(rerun_link).not_to include("system_prompt=")
+      expect(rerun_link.bytesize).to be < 1_024
+    end
+
+    it "round-trips a small operator override through the Re-run link" do
+      retrieval.update!(system_prompt_override: "Custom reviewer instructions.")
+      get "/curator/retrievals/#{retrieval.id}"
+
+      rerun_link = response.body[%r{href="(/curator/kbs/default/console\?[^"]+)"}, 1]
+      expect(rerun_link).to include("system_prompt=Custom+reviewer+instructions.")
+    end
+
     it "renders persisted hits via the shared console source partial" do
       doc = create(:curator_document, knowledge_base: kb, title: "manual.md")
       Curator::RetrievalHit.create!(

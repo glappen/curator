@@ -15,7 +15,16 @@ class CreateCuratorRetrievals < ActiveRecord::Migration[7.0]
       # before the LLM call runs.
       t.string  :chat_model
       t.string  :embedding_model
-      t.text    :system_prompt_text
+      # `system_prompt_override` stores the operator's per-call instructions
+      # override (the `system_prompt:` kwarg to `Curator.ask`) — nil when no
+      # override was passed and the KB / template default was used. The
+      # admin Snapshot view re-derives the full assembled prompt by passing
+      # this back through `Curator::Prompt::Assembler` with the persisted
+      # hits, so we don't need to store the multi-KB rendered output.
+      # `system_prompt_hash` is the SHA256 of the assembled prompt the LLM
+      # actually saw — keep as a stable cohort key for analytics that
+      # group "what prompt was sent to the model".
+      t.text    :system_prompt_override
       t.string  :system_prompt_hash
       t.string  :retrieval_strategy
       t.decimal :similarity_threshold, precision: 4, scale: 3

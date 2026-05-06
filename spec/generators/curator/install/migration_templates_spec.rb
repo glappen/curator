@@ -35,7 +35,7 @@ RSpec.describe "Curator install migration templates" do
     "create_curator_retrievals.rb.tt"      => {
       class_name: "CreateCuratorRetrievals",
       table:      "curator_retrievals",
-      must_have:  [ "system_prompt_text", "retrieval_strategy", "chunk_limit" ]
+      must_have:  [ "system_prompt_override", "retrieval_strategy", "chunk_limit" ]
     },
     "create_curator_retrieval_steps.rb.tt" => {
       class_name: "CreateCuratorRetrievalSteps",

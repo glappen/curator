@@ -50,8 +50,10 @@ RSpec.describe "Curator.ask" do
       expect(row).to                     be_success
       expect(row.chat_id).not_to         be_nil
       expect(row.message_id).not_to      be_nil
-      expect(row.system_prompt_text).to  include(%([1] From))
-      expect(row.system_prompt_hash).to  match(/\A[0-9a-f]{64}\z/)
+      # No `system_prompt:` kwarg → no operator override stored. Hash still
+      # set; it digests the assembled prompt the LLM saw.
+      expect(row.system_prompt_override).to be_nil
+      expect(row.system_prompt_hash).to     match(/\A[0-9a-f]{64}\z/)
       expect(row.strict_grounding).to    be true
       expect(row.include_citations).to   be true
       expect(row.chat_model).to          eq(kb.chat_model)
@@ -161,9 +163,11 @@ RSpec.describe "Curator.ask" do
                                       system_prompt: "Custom override instructions.")
 
       row = Curator::Retrieval.sole
-      expect(row.system_prompt_text).to start_with("Custom override instructions.")
-      # Context block is still Curator-built, so the citation marker survives.
-      expect(row.system_prompt_text).to include(%([1] From))
+      # The raw operator override is what's persisted. The full assembled
+      # prompt (instructions + context block with citation markers) is
+      # re-derivable on demand by the snapshot view, but isn't stored.
+      expect(row.system_prompt_override).to eq("Custom override instructions.")
+      expect(row.system_prompt_hash).to     match(/\A[0-9a-f]{64}\z/)
     end
   end
 
@@ -453,9 +457,12 @@ RSpec.describe "Curator.ask" do
         row = Curator::Retrieval.sole
         types = row.retrieval_steps.order(:sequence).pluck(:step_type)
         expect(types).to include("llm_call")
-        # Assembler still ran with zero hits — instructions present, no
-        # `[N] From` block since hits were empty.
-        expect(row.system_prompt_text).not_to include(%([1] From))
+        # No operator override and Assembler still ran with zero hits —
+        # the LLM saw instructions only with no `[N] From` block. The
+        # snapshot column captures only the override (nil here); the hash
+        # digests whatever the LLM saw.
+        expect(row.system_prompt_override).to be_nil
+        expect(row.system_prompt_hash).to     match(/\A[0-9a-f]{64}\z/)
       end
     end
   end

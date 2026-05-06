@@ -296,8 +296,7 @@ edits.
 
 ## Current Work
 
-_(empty — Phases 0–5 done. Phase 6 (manual QA in dummy app) comes
-next.)_
+_(empty — Phases 0–6 done. M7 ships.)_
 
 ## Next Steps
 
@@ -525,19 +524,80 @@ next.)_
      Retrievals tab with filters, click Export CSV, confirm download +
      row count matches filter; same for Evaluations.
 
-- [ ] **Phase 6 — Manual visual QA in dummy app.** Exercise the full
-   M7 surface in a browser against the dummy app:
-   - Run a Console query, click 👎, see categories appear, submit, see
-     row in Evaluations tab.
-   - Click into a retrieval from Retrievals tab, confirm answer +
-     sources + snapshot render, hit "Re-run in Console", confirm new
-     run is `origin: :console_review` and hidden from default index.
-   - Submit an SME annotation via the detail view, confirm a *second*
-     eval row appears for the same retrieval.
-   - Filter Evaluations by `:negative` + `:hallucination`, verify
-     correct rows.
-   - Export CSV from both tabs with filters applied; spot-check the
-     downloaded files.
+- [x] **Phase 6 — Manual visual QA against the test host app.** ✓
+  Exercised against a host app at `localhost:3000/curator` (single
+  KB with one PDF ingested). Five flows verified end-to-end:
+  - Console 👎 → expansion form → submit → row appears in Evaluations
+    tab with category chip + reviewer role.
+  - Retrievals → click row → detail view (answer, 5 sources,
+    snapshot config, trace 4 steps, "Re-run in Console" link) →
+    re-run → new row with `origin: :console_review`, hidden from
+    default Retrievals index, surfaced under `?show_review=true`.
+  - Detail-view "Add evaluation" form posts a new eval row each
+    time (no in-place update on the detail-view path; that's the
+    Console-inline edit-in-place path's job).
+  - Evaluations index filtered by `?rating=negative` +
+    `failure_categories[]=hallucination` returned only the matching
+    eval; unfiltered showed all three test evals.
+  - CSV + JSON exports for both tabs round-trip filter querystring,
+    set `text/csv`/`application/json` + `Content-Disposition:
+    attachment` headers, and emit failure_categories as semicolon
+    string (CSV) / array (JSON).
+  - **Defect found and fixed during the run** (own subsection below).
+
+- [x] **Phase 6.5 — Re-run link querystring overflow + snapshot
+  semantic rename.** ✓ The Re-run-in-Console deep link blew past
+  Puma's default 10 KB `QUERY_STRING` cap on the first multi-chunk
+  retrieval (link was ~12.6 KB). Root cause was deeper than a URL-
+  size issue: the `system_prompt_text` column on
+  `curator_retrievals` was storing Assembler's *output* (instructions
+  + assembled context with all chunk text), and the Re-run link
+  shoved that whole blob back into the form's `system_prompt`
+  override slot — which would, if it had fit, produce a doubled-
+  context prompt on re-run. Pre-v1 schema rename ships the
+  semantically-correct fix:
+  - `lib/generators/curator/install/templates/create_curator_retrievals.rb.tt`
+    — column renamed `system_prompt_text` → `system_prompt_override`.
+    Stores only the operator's per-call override (the
+    `system_prompt:` kwarg to `Curator.ask`); nil when no override.
+    `system_prompt_hash` unchanged (still hashes the assembled
+    prompt the LLM saw — useful as an analytics cohort key).
+  - `lib/curator/asker.rb` — writes `@system_prompt_override` to
+    `system_prompt_override` instead of `result[:system_prompt_text]`.
+    Assembler return shape unchanged; we just stop persisting the
+    multi-KB output.
+  - `app/views/curator/retrievals/_snapshot.html.erb` — re-derives
+    the assembled prompt at view-render time by calling
+    `Curator::Prompt::Assembler.new.call(kb:, hits:)` against the
+    persisted `retrieval_hits` and a (possibly override-stamped)
+    KB dup. Snapshot UI keeps the audit-trail "what the LLM saw"
+    panel; an "Operator override" panel renders separately when
+    one is set. Drift detection: the persisted
+    `system_prompt_hash` will mismatch the re-derived hash if
+    `kb.system_prompt` has changed since the original retrieval.
+  - `app/views/curator/retrievals/show.html.erb` — Re-run link
+    sources from `system_prompt_override` (the small field) and
+    `.compact`s nil values so the param is omitted when no
+    override was used. Link is now < 1 KB even for multi-chunk
+    retrievals.
+  - Specs updated:
+    - `spec/curator/asker_spec.rb` (3 examples) — assert
+      `system_prompt_override` is nil on default-path runs and
+      equal to the kwarg on override runs; `system_prompt_hash`
+      still hex-shaped in both.
+    - `spec/jobs/curator/console_stream_job_spec.rb` — same shape
+      assertion on the persisted Console-stream row.
+    - `spec/requests/curator/ask_smoke_spec.rb` — the
+      no-citations-template test now re-derives the assembled
+      prompt via Assembler against the persisted hits (instead of
+      reading the column) and asserts template selection there.
+    - `spec/requests/curator/retrievals_spec.rb` (2 new examples)
+      — Re-run link omits `system_prompt=` and stays under 1 KB
+      when no override; round-trips a small override when one is
+      set.
+    - `spec/generators/curator/install/migration_templates_spec.rb`
+      — must-have token list updated to `system_prompt_override`.
+  - Validate: 721 examples, 0 failures; rubocop no offenses.
 
 ## Validation Strategy
 

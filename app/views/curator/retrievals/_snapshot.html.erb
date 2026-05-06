@@ -26,10 +26,29 @@
   <dt>Total duration</dt>
   <dd><%= retrieval.total_duration_ms ? "#{retrieval.total_duration_ms} ms" : "—" %></dd>
 
-  <% if retrieval.system_prompt_text.present? %>
-    <dt>System prompt</dt>
+  <% if retrieval.system_prompt_override.present? %>
+    <dt>Operator override</dt>
     <dd>
-      <pre class="retrieval-detail__snapshot-prompt"><%= retrieval.system_prompt_text %></pre>
+      <pre class="retrieval-detail__snapshot-prompt"><%= retrieval.system_prompt_override %></pre>
+    </dd>
+  <% end %>
+
+  <%# Re-derive the assembled prompt the LLM saw by passing the persisted
+      hits + the operator override (if any) back through the Assembler.
+      This avoids storing the multi-KB rendered output on every retrieval
+      row but preserves the audit-trail UI. The hash above lets an SME
+      spot drift if the KB's default instructions have changed since the
+      original retrieval. %>
+  <% if hits.any? %>
+    <% kb_for_assembly = retrieval.knowledge_base
+       if retrieval.system_prompt_override.present?
+         kb_for_assembly = retrieval.knowledge_base.dup
+         kb_for_assembly.system_prompt = retrieval.system_prompt_override
+       end
+       assembled = Curator::Prompt::Assembler.new.call(kb: kb_for_assembly, hits: hits) %>
+    <dt>Assembled prompt</dt>
+    <dd>
+      <pre class="retrieval-detail__snapshot-prompt"><%= assembled[:system_prompt_text] %></pre>
     </dd>
   <% end %>
 </dl>

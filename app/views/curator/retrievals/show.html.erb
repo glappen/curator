@@ -20,13 +20,15 @@
       <%= link_to "Re-run in Console",
                   curator.knowledge_base_console_path(
                     @retrieval.knowledge_base.slug,
-                    origin:               "console_review",
-                    query:                @retrieval.query,
-                    chunk_limit:          @retrieval.chunk_limit,
-                    similarity_threshold: @retrieval.similarity_threshold,
-                    strategy:             @retrieval.retrieval_strategy,
-                    chat_model:           @retrieval.chat_model,
-                    system_prompt:        @retrieval.system_prompt_text
+                    {
+                      origin:               "console_review",
+                      query:                @retrieval.query,
+                      chunk_limit:          @retrieval.chunk_limit,
+                      similarity_threshold: @retrieval.similarity_threshold,
+                      strategy:             @retrieval.retrieval_strategy,
+                      chat_model:           @retrieval.chat_model,
+                      system_prompt:        @retrieval.system_prompt_override.presence
+                    }.compact
                   ),
                   class: "btn" %>
     </div>
@@ -66,7 +68,7 @@
       without any JS. %>
   <details class="retrieval-detail__snapshot">
     <summary>Snapshot config</summary>
-    <%= render "snapshot", retrieval: @retrieval %>
+    <%= render "snapshot", retrieval: @retrieval, hits: @hits %>
   </details>
 
   <details class="retrieval-detail__trace">

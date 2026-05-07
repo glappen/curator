@@ -25,6 +25,7 @@ require "curator/retriever"
 require "curator/prompt/templates"
 require "curator/prompt/assembler"
 require "curator/asker"
+require "curator/chat"
 require "curator/evaluator"
 require "curator/reembed"
 require "curator/model_options"
@@ -171,6 +172,31 @@ module Curator
         chat_model:     chat_model,
         &block
       )
+    end
+
+    # Open a multi-turn `Curator::Chat`, either fresh (pinned to a KB)
+    # or resumed by id. Mutually exclusive: pass exactly one of
+    # `knowledge_base:` or `id:`.
+    #
+    # Fresh chats persist a `curator_chat_bindings` row that records
+    # the KB pin so future `Curator.chat(id:)` calls rehydrate the
+    # same KB without the caller passing it again.
+    #
+    # Phase 3a ships only the public surface; `#ask` and `#history`
+    # raise `NotImplementedError` until Phase 3b.
+    #
+    # @param knowledge_base [Curator::KnowledgeBase, String, Symbol, nil]
+    # @param id [Integer, nil] existing `chats.id` to resume.
+    # @return [Curator::Chat]
+    def chat(knowledge_base: nil, id: nil)
+      if id.nil? && knowledge_base.nil?
+        raise ArgumentError, "Curator.chat: pass either `knowledge_base:` (new) or `id:` (resume)"
+      end
+      if !id.nil? && !knowledge_base.nil?
+        raise ArgumentError, "Curator.chat: pass `knowledge_base:` or `id:`, not both"
+      end
+
+      id.nil? ? Chat.create(knowledge_base: knowledge_base) : Chat.find(id: id)
     end
 
     # Record an evaluation against a persisted retrieval.

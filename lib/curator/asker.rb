@@ -140,7 +140,10 @@ module Curator
     end
 
     def create_chat!(chat_model, retrieval_row)
-      chat = Chat.create!(model: chat_model)
+      # `::Chat` — without the leading `::`, the constant resolves
+      # inside the enclosing `Curator` module to `Curator::Chat`
+      # (the M8 wrapper) rather than RubyLLM's AR-backed `Chat`.
+      chat = ::Chat.create!(model: chat_model)
       retrieval_row&.update!(chat_id: chat.id)
       chat
     end

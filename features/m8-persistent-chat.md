@@ -21,6 +21,19 @@ living document — Phase 0 ships those edits.
 
 ## Completed
 
+- **Phase 3a — `Curator::Chat` public API contract.** `lib/curator/chat.rb`
+  ships the wrapper (`self.create`, `self.find`, `#ask`, `#history`,
+  `#id`, `#knowledge_base`, `#raw`); `#ask` and `#history` raise
+  `NotImplementedError` until 3b. `lib/curator.rb` gains the
+  `Curator.chat(knowledge_base:, id:)` delegator (mutually exclusive,
+  ArgumentError on neither/both). New `Curator::ChatBinding` AR model
+  pins KB to RubyLLM `chats` row. Frozen contract spec at
+  `spec/curator/chat_contract_spec.rb` (9 examples). Side fix: AR
+  `class_name: "Chat"` strings in `Curator::Retrieval` and the
+  `Asker#create_chat!` `Chat.create!` call were resolving inside the
+  `Curator` module and now bind to `Curator::Chat` (the wrapper);
+  switched to explicit `::Chat` / `class_name: "::Chat"`.
+
 - **Phase 0 — Spec amendments + schema additions.** `features/implementation.md`
   amended (M8/M9 boundary, `:chat_tool` origin, `:tool_call_started`/
   `:tool_call_completed` step types with payload schemas, new
@@ -139,23 +152,6 @@ against a frozen `Curator::Chat` public API.
     - Format-1 string matches `[N] From "..." (page N): ...`.
     - Step rows written with payloads matching the documented
       schema.
-
-- [ ] **Phase 3a — `Curator::Chat` public API contract.**
-  - `lib/curator/chat.rb` — wrapper class with `self.create`,
-    `self.find`, `#ask`, `#history`, `#id`, `#knowledge_base`,
-    `#raw` method signatures. `#ask` raises `NotImplementedError`
-    until Phase 3b lands.
-  - `lib/curator.rb` — `Curator.chat(knowledge_base: nil, id:
-    nil)` delegator. Picks `Chat.create` vs `Chat.find` based on
-    `id` presence; raises `ArgumentError` if both or neither are
-    passed.
-  - Frozen contract spec at
-    `spec/curator/chat_contract_spec.rb` — asserts
-    `Curator.chat(...)` returns a `Curator::Chat`, asserts
-    `wrapper.knowledge_base` resolves correctly, asserts `#ask`
-    raises until Phase 3b.
-  - **Validate:** contract spec passes; rubocop clean. Lets
-    Phase 4 start in parallel.
 
 ### Block C — two parallel tracks (after Block B)
 

@@ -6,8 +6,12 @@ module Curator
     ORIGINS  = %i[adhoc console console_review chat_tool].freeze
 
     belongs_to :knowledge_base, class_name: "Curator::KnowledgeBase"
-    belongs_to :chat,    class_name: "Chat",    optional: true
-    belongs_to :message, class_name: "Message", optional: true
+    # `::Chat` / `::Message` — bare `"Chat"` would resolve inside the
+    # enclosing `Curator` module to `Curator::Chat` (the M8 wrapper)
+    # instead of RubyLLM's AR-backed `Chat`. Same hazard with
+    # `Message` (none today, but cheap parity).
+    belongs_to :chat,    class_name: "::Chat",    optional: true
+    belongs_to :message, class_name: "::Message", optional: true
 
     has_many :retrieval_steps, class_name: "Curator::RetrievalStep", dependent: :destroy
     has_many :retrieval_hits,  class_name: "Curator::RetrievalHit",  dependent: :destroy

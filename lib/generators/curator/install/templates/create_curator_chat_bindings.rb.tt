@@ -1,0 +1,24 @@
+class CreateCuratorChatBindings < ActiveRecord::Migration[7.0]
+  def change
+    create_table :curator_chat_bindings do |t|
+      # FK to RubyLLM `chats` table — bigint without DB-level FK, matching
+      # the `curator_retrievals.chat_id` pattern (Curator owns no integrity
+      # constraints against ruby_llm-managed tables).
+      t.bigint :chat_id, null: false
+
+      t.references :knowledge_base,
+                   null: false,
+                   foreign_key: { to_table: :curator_knowledge_bases, on_delete: :cascade },
+                   index: { name: "index_curator_chat_bindings_on_knowledge_base_id" }
+
+      # Optional UI namespace partition (populated by scoped curator:chat_ui
+      # generator runs). Replaces the old `chats.curator_scope` column.
+      t.string :curator_scope
+
+      t.datetime :created_at, null: false
+    end
+
+    add_index :curator_chat_bindings, :chat_id, unique: true
+    add_index :curator_chat_bindings, :curator_scope
+  end
+end

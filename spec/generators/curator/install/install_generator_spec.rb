@@ -85,12 +85,31 @@ RSpec.describe Curator::Generators::InstallGenerator, type: :generator do
       create_curator_embeddings
       create_curator_retrievals
       create_curator_retrieval_steps
+      create_curator_retrieval_hits
       create_curator_evaluations
-      add_curator_scope_to_chats
+      create_curator_chat_bindings
     ].each do |name|
       it "generates a migration for #{name}" do
         expect(find_migration(/#{name}/)).not_to be_nil
       end
+    end
+
+    it "documents the M8 :chat_tool origin enum value in the retrievals migration" do
+      path = find_migration(/create_curator_retrievals/)
+      content = File.read(path)
+      expect(content).to include("chat_tool")
+      expect(content).to include("curator_retrievals_origin_check")
+    end
+
+    it "creates curator_chat_bindings with chat_id, knowledge_base_id, curator_scope (M8)" do
+      path = find_migration(/create_curator_chat_bindings/)
+      content = File.read(path)
+      expect(content).to include("create_table :curator_chat_bindings")
+      expect(content).to include("t.bigint :chat_id, null: false")
+      expect(content).to include("t.references :knowledge_base")
+      expect(content).to include("to_table: :curator_knowledge_bases")
+      expect(content).to include("t.string :curator_scope")
+      expect(content).to include("add_index :curator_chat_bindings, :chat_id, unique: true")
     end
 
     it "assigns monotonically increasing timestamps" do

@@ -50,7 +50,6 @@ RSpec.describe "Curator Q&A end-to-end smoke", type: :request do
       expect(answer.sources).not_to  be_empty
 
       chat = Chat.sole
-      expect(chat.curator_scope).to be_nil
       messages = chat.messages.order(:id)
       expect(messages.pluck(:role)).to eq(%w[system user assistant])
 

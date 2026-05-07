@@ -209,12 +209,19 @@ status                 string           # :success | :failed
 error_message          text nullable
 origin                 string default 'adhoc' indexed
                                         # :adhoc | :console | :console_review
+                                        # | :chat_tool
                                         # — :adhoc covers Curator.ask /
                                         # API / host-app callers, :console
                                         # marks Query Testing Console runs,
                                         # :console_review marks "Re-run in
                                         # Console" deep-links from a
-                                        # Retrievals-tab detail view.
+                                        # Retrievals-tab detail view,
+                                        # :chat_tool marks rows opened by
+                                        # the M8 retrieve tool inside a
+                                        # Curator::Chat turn (one row per
+                                        # turn that actually fired ≥1
+                                        # tool call; chitchat turns leave
+                                        # no row).
                                         # Default Retrievals/Evaluations
                                         # admin tabs hide :console_review.
 created_at
@@ -232,12 +239,58 @@ step_type              string           # embed_query | vector_search
                                         # | keyword_search | rrf_fusion
                                         # | prompt_assembly | llm_call
                                         # | tool_call
+                                        # | tool_call_started
+                                        # | tool_call_completed
 started_at             timestamp
 duration_ms            integer
 status                 string           # :success | :error
 payload                jsonb            # step-specific data
 error_message          text nullable
 ```
+
+`:tool_call_started` and `:tool_call_completed` bracket each invocation of
+`Curator::Chat::Tools::Retrieve` within a chat turn (M8). One turn with N
+tool calls writes N start/complete pairs against the same retrieval row.
+Payload schemas:
+
+- `:tool_call_started` —
+  `{ tool: "retrieve", call_index: <0-based int within turn>,
+     query: "<LLM-rephrased search string>" }`
+- `:tool_call_completed` —
+  `{ tool: "retrieve", call_index: <same as paired _started>,
+     hit_count: <int>, rank_range: [<low>, <high>] }`
+  `rank_range` reflects the continuous-renumbering scheme (see Citation
+  System); the second call in a 4-then-3-hit turn reports `[5, 7]`.
+
+#### `curator_chat_bindings`
+
+Curator-side metadata for a `Curator::Chat`. One row per chat that's
+created via `Curator.chat(...)` (M8). `Curator.ask` chats and raw
+RubyLLM-API chats have no binding row. Replaces the original M1 plan
+of adding `curator_scope` directly to RubyLLM's `chats` table —
+keeping Curator state out of foreign-owned tables means host apps can
+upgrade `ruby_llm` without column-conflict surprises.
+
+```
+id, chat_id              bigint, unique indexed
+                                        # FK to RubyLLM chats — bigint, no
+                                        # DB-level FK (matches the
+                                        # curator_retrievals.chat_id pattern).
+                                        # Orphans tolerated (deleted chat
+                                        # surfaces as Curator.chat(id:) raise).
+knowledge_base_id        FK             # cascade on delete
+curator_scope            string nullable indexed
+                                        # UI-namespace partition for scoped
+                                        # curator:chat_ui generator output.
+                                        # Nil for unscoped (top-level)
+                                        # generator output.
+created_at
+```
+
+Read paths:
+- `Curator.chat(id:)` joins on `chat_id` to recover `knowledge_base`.
+- Scoped chat UI sidebars query `curator_chat_bindings.curator_scope = "<scope>"`
+  joined back to `chats` for the listing.
 
 #### `curator_evaluations`
 
@@ -259,11 +312,12 @@ created_at, updated_at
 
 ### RubyLLM-owned tables
 
-Managed by `ruby_llm:install`. Curator does not modify these, except one
-additive migration for scoped chat UIs:
-
-`chats` gets `curator_scope string nullable` — populated by scoped
-`curator:chat_ui` generator runs, used to partition chat lists per UI namespace.
+Managed by `ruby_llm:install`. Curator **does not modify** these tables —
+chat-side Curator metadata (KB pinning, UI-namespace partition) lives in
+the Curator-owned `curator_chat_bindings` table instead. This was a
+deliberate revision of the original M1 plan (which added `curator_scope`
+directly to `chats`); see "Decisions Considered and Rejected" for the
+rationale.
 
 ---
 
@@ -284,11 +338,22 @@ results = Curator.retrieve("refund policy",
                          threshold: 0.7)
 # => Curator::RetrievalResults
 
-# Multi-turn persistent chat (retrieval wired as a RubyLLM tool)
+# Multi-turn persistent chat (retrieval wired as a RubyLLM tool).
+# Pass `knowledge_base:` to start a new chat (KB pinned for its lifetime),
+# or pass `id:` to resume an existing chat — passing both or neither
+# raises ArgumentError.
 chat = Curator.chat(knowledge_base: :support)
 answer1 = chat.ask("What's our refund policy?") { |c| ... }
 answer2 = chat.ask("How long do I have to claim?") { |c| ... }
 chat.history   # => [Curator::Answer, Curator::Answer]
+                # one Answer per assistant turn; chitchat turns carry
+                # retrieval_id: nil and hits: [].
+
+# Resume across requests/processes — `id:` is the underlying chats.id.
+later = Curator.chat(id: chat.id)
+later.knowledge_base   # => Curator::KnowledgeBase[:support]
+                       # (read from curator_chat_bindings.knowledge_base_id)
+later.ask("Anything I should be careful about?") { |c| ... }
 
 # Ingestion
 Curator.ingest(file,
@@ -344,6 +409,42 @@ Every `Curator.ask` and `Curator.chat#ask` creates a real RubyLLM `Chat` + user
 and assistant `Message` rows. `curator_retrievals` FKs to the assistant message
 so traceability is always present, even for one-shot calls.
 
+### Streaming
+
+**Tier 1 — text deltas (block API).** `Curator.ask` and `Curator.chat#ask`
+both accept an optional block; assistant text deltas are yielded chunk by
+chunk while the LLM streams. The block contract is identical between the
+two — a `String` chunk per yield, no lifecycle metadata. The fully
+materialized `Curator::Answer` is still returned after the block completes.
+
+**Tier 2 — retrieval lifecycle (`Curator::Tracing.subscribe`).** Tool-call
+and step-level lifecycle events are exposed via a separate hook so the
+streaming block stays single-purpose. M8 introduces:
+
+```ruby
+handle = Curator::Tracing.subscribe(scope: chat) do |event|
+  # event is a Hash:
+  #   { step_type: :tool_call_started | :tool_call_completed | ...,
+  #     retrieval_id: 123, chat_id: 7, sequence: 0,
+  #     payload: { ... }, started_at: ..., duration_ms: ... }
+end
+# ... do work that emits steps ...
+Curator::Tracing.unsubscribe(handle)
+```
+
+Implemented as a thin wrapper over `ActiveSupport::Notifications`
+(channel `"curator.step"`). Filters by `scope:` — pass a `Curator::Chat`
+or its underlying `Chat` to receive only that chat's events; pass a
+retrieval id to scope to a single retrieval. The generated
+`ChatResponseJob` (`curator:chat_ui`) is the canonical consumer:
+`:tool_call_started` becomes a "🔍 searching for '<rephrased>'..." Turbo
+frame, `:tool_call_completed` swaps it for "Found N sources", text deltas
+go through Tier 1.
+
+This is a **Tier 2 / advanced** API — most host apps won't touch it. It
+exists for chat UIs, custom progress bars, OpenTelemetry exporters, and
+similar lifecycle consumers.
+
 ---
 
 ## Retrieval Pipeline
@@ -373,6 +474,16 @@ the threshold:
 
 If `strict_grounding: false`, the LLM is allowed to answer from training data
 (with a prompt instruction to clearly indicate uncited content).
+
+**Chat mode (M8)** enforces strict grounding via system-prompt instruction
+rather than a post-hoc hard refusal. The chat-flavored system prompt
+includes a "refuse to answer when retrieval returned zero hits" rider, and
+the retrieve tool's return payload includes `hit_count` so the instruction
+has something concrete to react to. This is *prompted* enforcement, not
+*enforced* enforcement — see M8 Q3 in `features/m8-persistent-chat.md` for
+the rationale (chiefly: post-hoc refusal is incompatible with `auto` tool
+choice, which the chitchat case requires). `Curator.ask`'s hard-refusal
+path is unchanged.
 
 ---
 
@@ -474,6 +585,15 @@ Refunds exclude services already rendered...
 The LLM is instructed to reference `[N]` markers when making claims. Internally
 Curator holds the mapping `{ 1 => chunk_id, 2 => chunk_id, ... }` and returns
 it via `Curator::Answer#sources`.
+
+**Chat mode (M8)** ranks are renumbered **continuously across tool calls
+within a turn**: a turn whose first retrieve call returns 4 hits and whose
+second returns 3 produces ranks `[1..4]` then `[5..7]`. The wire format
+stays identical (one citation = one integer); `retrieval_hits.rank` keeps
+its row-scoped uniqueness guarantee; per-call boundaries live in
+`curator_retrieval_steps.payload.rank_range` rather than in marker syntax.
+Per-call namespacing (`[1.3]`) and end-of-turn rewriting were both
+considered and rejected — see M8 Q4.
 
 When `include_citations: false`, chunks are injected without markers and the
 LLM is not instructed to cite. `sources` is still populated in the return value
@@ -708,7 +828,7 @@ Creates:
   - `curator_retrievals`
   - `curator_retrieval_steps`
   - `curator_evaluations`
-  - Adds `curator_scope string nullable` to `chats`
+  - `curator_chat_bindings`
 - `app/controllers/knowledge_controller.rb` (sample — unless `--skip-sample-controller`)
 - Seeds a default KB via `curator:seed_defaults` rake task (not inline in a
   migration)
@@ -749,7 +869,7 @@ rails g curator:chat_ui research             # multi-KB selector, scoped
 Scoped output lands under `Support::` (etc.) — controllers, views, jobs,
 routes all namespaced. RubyLLM Chat / Message models are shared across scopes
 (one underlying schema) but each scoped controller partitions lists via
-`curator_scope` column on `chats`.
+`curator_chat_bindings.curator_scope`.
 
 Custom model name overrides:
 ```bash
@@ -877,7 +997,7 @@ is demo-able end-to-end via CLI).
 - Gem skeleton (RSpec, `spec/dummy`, RuboCop Omakase, gemspec)
 - `curator:install` generator (chains `ruby_llm:install`, verifies pgvector,
   writes initializer, migrations, sample controller, mount line)
-- Migrations for all Curator tables + `chats.curator_scope` additive migration
+- Migrations for all Curator tables (incl. `curator_chat_bindings`)
 - Model classes with associations + validations (no business logic yet)
 - `curator:seed_defaults` rake task (seeds default KB; invoked post-install)
 - Auth hook plumbing (`ApplicationController`, `Api::BaseController`
@@ -944,14 +1064,18 @@ is demo-able end-to-end via CLI).
   wrap `Curator::Evaluation.create!` in their own controller)
 
 ### M8 — Persistent Chat
-- `Curator::Chat` wrapper class
-- Retrieval wired as a RubyLLM Tool
+- `Curator::Chat` wrapper class (single-KB pinned at creation)
+- Retrieval wired as a RubyLLM Tool (`Curator::Chat::Tools::Retrieve`); tool
+  choice is `auto` so chitchat turns can skip retrieval entirely
 - Tool-call trace capture into `curator_retrieval_steps`
-- `curator:chat_ui` generator (unscoped) — both single-KB pin (`--kb=slug`) and
-  multi-KB selector modes
+  (`:tool_call_started` / `:tool_call_completed`)
+- `Curator::Tracing.subscribe(scope:, &block)` extension hook
+  (`ActiveSupport::Notifications`-backed) for tool-call lifecycle UX
+- `curator:chat_ui` generator — both unscoped and **scoped** invocations
+  (single-KB pin via `--kb=slug` or multi-KB selector); scoped output writes
+  `curator_chat_bindings.curator_scope` for partitioning
 
 ### M9 — Polish & Release
-- Scoped `curator:chat_ui` generator (`curator_scope` partitioning on chats)
 - Rich dashboard (tiles, needs-attention panel, activity feed, per-KB nav
   cards)
 - Remaining rake tasks (`curator:stats`, `curator:vacuum`)
@@ -1067,5 +1191,11 @@ shape.
 - **Oversized padded vectors** (e.g. always vector(4096)) — rejected; cosine
   similarity is correct, but storage is 2.6× larger and queries scale with
   dimension, including padded zeros.
-- **Ignoring the `curator_scope` column for simple apps** — rejected;
-  nullable string column has negligible cost and keeps the generator simpler.
+- **Adding `curator_scope` / `curator_kb_slug` columns directly to RubyLLM's
+  `chats` table** — rejected during M8 Phase 0 (originally accepted in M1).
+  Each new column on a foreign-owned table compounds upgrade risk for host
+  apps that bump `ruby_llm` independently, and the `curator_scope` precedent
+  was about to grow a second column for KB pinning. Replaced with a
+  Curator-owned `curator_chat_bindings` table that joins to `chats.id`. KB
+  pin and UI-namespace partition both live there. The cost is one extra
+  query when resuming a chat — invisible at chat-resume scale.

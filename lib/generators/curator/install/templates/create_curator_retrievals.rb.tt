@@ -36,10 +36,12 @@ class CreateCuratorRetrievals < ActiveRecord::Migration[7.0]
       t.string  :status,        null: false, default: "success"
       t.text    :error_message
 
-      # :adhoc | :console | :console_review. Default :adhoc covers
-      # Curator.ask / API / host-app callers; Console runs and "Re-run
-      # in Console" deep-links populate the other two so the admin
-      # Retrievals tab can hide review-loop noise from the default view.
+      # :adhoc | :console | :console_review | :chat_tool. Default :adhoc
+      # covers Curator.ask / API / host-app callers; Console runs and
+      # "Re-run in Console" deep-links populate the next two so the admin
+      # Retrievals tab can hide review-loop noise from the default view;
+      # :chat_tool marks rows opened by the M8 retrieve tool inside a
+      # Curator::Chat turn (see app/models/curator/retrieval.rb ORIGINS).
       t.string :origin, null: false, default: "adhoc"
 
       t.datetime :created_at, null: false
@@ -49,5 +51,8 @@ class CreateCuratorRetrievals < ActiveRecord::Migration[7.0]
     add_index :curator_retrievals, :message_id
     add_index :curator_retrievals, :created_at
     add_index :curator_retrievals, :origin
+    add_check_constraint :curator_retrievals,
+                         "origin IN ('adhoc', 'console', 'console_review', 'chat_tool')",
+                         name: "curator_retrievals_origin_check"
   end
 end

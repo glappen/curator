@@ -2,7 +2,7 @@ module Curator
   # Service object for `Curator.ask`. Orchestrates: open a
   # `curator_retrievals` row with snapshot config → run the shared
   # `Curator::Retrievers::Pipeline` for hits → assemble the system
-  # prompt → create a RubyLLM `Chat` (`curator_scope: nil`) →
+  # prompt → create a RubyLLM `Chat` →
   # `chat.with_instructions(...).ask(query)` wrapped in a `:llm_call`
   # trace step → finalize the row with `chat_id` / `message_id` /
   # `system_prompt_*` and return `Curator::Answer`. Mirrors
@@ -140,7 +140,7 @@ module Curator
     end
 
     def create_chat!(chat_model, retrieval_row)
-      chat = Chat.create!(model: chat_model, curator_scope: nil)
+      chat = Chat.create!(model: chat_model)
       retrieval_row&.update!(chat_id: chat.id)
       chat
     end

@@ -130,7 +130,7 @@ lib/
 │               ├── create_curator_retrievals.rb.tt
 │               ├── create_curator_retrieval_steps.rb.tt
 │               ├── create_curator_evaluations.rb.tt
-│               └── add_curator_scope_to_chats.rb.tt
+│               └── create_curator_chat_bindings.rb.tt
 └── tasks/
     └── curator.rake                        # existing placeholder — add seed task
 app/
@@ -190,7 +190,10 @@ spec/
       `curator_knowledge_bases(is_default) where is_default = true`
 - [ ] `pg_indexes` confirms GIN on `curator_evaluations.failure_categories`
 - [ ] `curator_embeddings.embedding` column type is `vector(1536)` by default
-- [ ] `chats.curator_scope` column exists and is nullable
+- [ ] `curator_chat_bindings` table exists with `chat_id` (unique),
+      `knowledge_base_id` (FK), and nullable indexed `curator_scope`
+      (revised in M8 Phase 0; replaced the earlier `chats.curator_scope`
+      column to keep RubyLLM's `chats` table unmodified)
 
 ### Phase 2 — Install generator
 - [ ] `rails g curator:install --embedding-dim=3072` writes a migration

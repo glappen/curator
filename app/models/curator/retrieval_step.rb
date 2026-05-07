@@ -10,6 +10,8 @@ module Curator
       prompt_assembly
       llm_call
       tool_call
+      tool_call_started
+      tool_call_completed
     ].freeze
 
     STATUSES = %i[success error].freeze

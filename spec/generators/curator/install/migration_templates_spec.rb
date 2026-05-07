@@ -35,7 +35,13 @@ RSpec.describe "Curator install migration templates" do
     "create_curator_retrievals.rb.tt"      => {
       class_name: "CreateCuratorRetrievals",
       table:      "curator_retrievals",
-      must_have:  [ "system_prompt_override", "retrieval_strategy", "chunk_limit" ]
+      must_have:  [
+        "system_prompt_override",
+        "retrieval_strategy",
+        "chunk_limit",
+        "chat_tool",
+        "curator_retrievals_origin_check"
+      ]
     },
     "create_curator_retrieval_steps.rb.tt" => {
       class_name: "CreateCuratorRetrievalSteps",
@@ -58,9 +64,15 @@ RSpec.describe "Curator install migration templates" do
       table:      "curator_evaluations",
       must_have:  [ "failure_categories", "array: true", "using: :gin" ]
     },
-    "add_curator_scope_to_chats.rb.tt"     => {
-      class_name: "AddCuratorScopeToChats",
-      must_have:  [ "add_column :chats, :curator_scope" ]
+    "create_curator_chat_bindings.rb.tt"   => {
+      class_name: "CreateCuratorChatBindings",
+      table:      "curator_chat_bindings",
+      must_have:  [
+        "t.bigint :chat_id, null: false",
+        "to_table: :curator_knowledge_bases, on_delete: :cascade",
+        "t.string :curator_scope",
+        "add_index :curator_chat_bindings, :chat_id, unique: true"
+      ]
     }
   }
 

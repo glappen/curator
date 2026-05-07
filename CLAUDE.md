@@ -20,8 +20,9 @@ deferrals. `features/initial.md` captures product vision.
 - **Commit messages**: one sentence, subject line only. No body, no bullet
   lists, no "why we did this" paragraphs — that belongs in the PR description.
 - **Table prefix**: All Curator-owned tables are prefixed `curator_`. RubyLLM
-  owns `chats`, `messages`, `tool_calls`, `models` — do not modify beyond the
-  one additive `curator_scope` column on `chats`.
+  owns `chats`, `messages`, `tool_calls`, `models` — **do not modify** these.
+  Per-chat Curator state (KB pin, UI-namespace partition) lives in the
+  Curator-owned `curator_chat_bindings` table.
 - **File layout** (abridged — full tree in `features/implementation.md`):
   ```
   lib/curator/            # top-level code
@@ -74,8 +75,8 @@ deferrals. `features/initial.md` captures product vision.
   `:adhoc` (host-app calls), `:console` (admin sandbox), `:console_review`
   (replay of a logged retrieval). Added in M7 so eval-quality metrics aren't
   contaminated by exploratory console traffic.
-- **Scoped chat UIs** share RubyLLM models but partition via `curator_scope`
-  string on `chats`.
+- **Scoped chat UIs** share RubyLLM models but partition via
+  `curator_chat_bindings.curator_scope`.
 - **Process-global inflection rule** registered at engine boot
   (`lib/curator/engine.rb`): `irregular("knowledge_base", "knowledge_bases")`.
   Without it, Rails' default inflector singularizes `bases → basis` and the

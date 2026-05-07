@@ -3,7 +3,7 @@ module Curator
     self.table_name = "curator_retrievals"
 
     STATUSES = %i[success failed].freeze
-    ORIGINS  = %i[adhoc console console_review].freeze
+    ORIGINS  = %i[adhoc console console_review chat_tool].freeze
 
     belongs_to :knowledge_base, class_name: "Curator::KnowledgeBase"
     belongs_to :chat,    class_name: "Chat",    optional: true

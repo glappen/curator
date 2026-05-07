@@ -145,8 +145,9 @@ module Curator
     # overrides. Returns `Curator::Answer` wrapping the assistant
     # text, the underlying `RetrievalResults`, and bookkeeping FKs.
     #
-    # Persists one `chats` row (`curator_scope: nil`) plus user +
-    # assistant `messages` rows per ask, and (when
+    # Persists one `chats` row plus user + assistant `messages` rows
+    # per ask (no `curator_chat_bindings` row — bindings exist only for
+    # `Curator.chat` flows), and (when
     # `Curator.config.log_queries`) one `curator_retrievals` row
     # snapshotting every column that affects the answer at query time.
     #

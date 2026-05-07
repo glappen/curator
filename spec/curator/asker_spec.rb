@@ -63,11 +63,10 @@ RSpec.describe "Curator.ask" do
       expect(row.total_duration_ms).to   be >= 0
     end
 
-    it "creates exactly one Chat with curator_scope: nil and persists user + assistant messages" do
+    it "creates exactly one Chat and persists user + assistant messages" do
       Curator.ask("alpha beta gamma", knowledge_base: kb)
 
       chat = Chat.sole
-      expect(chat.curator_scope).to be_nil
 
       # acts_as_chat persists: system instruction + user + assistant
       messages = chat.messages.order(:id)

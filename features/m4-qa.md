@@ -114,7 +114,10 @@ Milestones" → M4, plus the "Service Object API", "Citation System",
      prompt_token_estimate }`. Updates `retrieval_row` with
      `system_prompt_text` / `system_prompt_hash`.
    - **Persistence: RubyLLM `Chat` row** — `Chat.create!(model_id:
-     resolved_chat_model_id, curator_scope: nil)`. Uses
+     resolved_chat_model_id)`. (Pre-M8 this passed `curator_scope: nil`;
+     M8 Phase 0 dropped the column from `chats` in favor of the
+     Curator-owned `curator_chat_bindings` table, and ask-flow chats
+     have no binding row.) Uses
      `RubyLLM::Models.resolve(chat_model)` to map the configured
      model name onto a `models` row. Tied to the retrieval row via
      `retrieval_row.update!(chat_id: chat.id)`.
@@ -391,7 +394,9 @@ spec/
 - [x] Exactly one `chats` row, one `messages` row with
       `role: "user"` and content == query, and one with
       `role: "assistant"` and content == answer text.
-- [x] `chats.curator_scope` is nil.
+- [x] No `curator_chat_bindings` row is created (ask-flow chats are
+      unbound; bindings are only written by `Curator.chat`). Pre-M8 this
+      checked `chats.curator_scope is nil` — see M8 Phase 0.
 - [x] Trace shows `embed_query` + retrieval-strategy step +
       `prompt_assembly` + `llm_call`, in order, all
       `status: :success`.
@@ -536,14 +541,14 @@ this in the configuration comment for `llm_retry_count`. M6
 operators expecting "transparent retries during a stream" will
 be surprised, so the docs need to call it out.
 
-**`curator_scope: nil` reservation**: M8's `curator:chat_ui`
-generator is the only thing that should populate `curator_scope`.
-Tagging ad-hoc `Curator.ask` chats with `"ask"` would overload
-the column with two semantic axes ("which UI" + "is this an API
-ask"), forcing chat UIs to filter on conjunction. The KB
-association is on `curator_retrievals.knowledge_base_id`;
-`Chat.where(curator_scope: nil)` finds all ad-hoc asks across
-all KBs.
+**`curator_chat_bindings` separation** (revised in M8 Phase 0):
+M8's `curator:chat_ui` generator is the only thing that should
+write `curator_chat_bindings` rows. Ask-flow chats stay unbound,
+so "find all ad-hoc asks" is a `chats LEFT OUTER JOIN
+curator_chat_bindings WHERE binding.id IS NULL` query. The KB
+association for ask-flow is on `curator_retrievals.knowledge_base_id`.
+(Pre-M8 plan was to mark ad-hoc asks via `chats.curator_scope:
+nil`; that column was removed in favor of the binding table.)
 
 **Hit snapshot vs. live FK (Phase 5)**: `curator_retrieval_hits`
 denormalizes `text` / `document_name` / `page_number` /
@@ -617,7 +622,7 @@ Captured from `/ideate` session on 2026-04-27.
 | # | Question | Conclusion |
 |---|---|---|
 | 1 | `Curator.ask` ↔ `Curator.retrieve` row relationship | **Factor the retrieval core into a shared seam** (`Curator::Retrievers::Pipeline`). `Retriever` and `Asker` each open their own `curator_retrievals` row; Asker's row carries `chat_id` / `message_id` / `system_prompt_*` from creation — no backfill, no cross-coupling. M3's Retriever becomes a thin wrapper around Pipeline. |
-| 2 | RubyLLM `Chat` persistence per ask | **New `Chat` row per `Curator.ask`, `curator_scope: nil`.** Spec is explicit: "every `Curator.ask` creates a real `Chat` + user and assistant `Message` rows." `curator_scope` reserved for M8 chat-UI generators; tagging ad-hoc asks would overload the column. Chat pruning is host-app responsibility. |
+| 2 | RubyLLM `Chat` persistence per ask | **New `Chat` row per `Curator.ask`, no `curator_chat_bindings` row.** Spec is explicit: "every `Curator.ask` creates a real `Chat` + user and assistant `Message` rows." Curator-owned chat metadata is reserved for M8 `Curator.chat` / chat-UI flows; tagging ad-hoc asks would overload the binding table's scope semantics. Chat pruning is host-app responsibility. |
 | 3 | Strict-grounding execution path | **Skip the LLM call entirely on no-hits.** Synthesize refusal in Ruby, persist as the assistant message via RubyLLM's `add_message`, yield as a single `String` chunk to streaming blocks, emit `prompt_assembly` trace step with no `llm_call`. Absence of `llm_call` is the admin-UI signal. `status: :success`. Hardcoded `REFUSAL_MESSAGE` constant; per-KB override deferred. |
 | 4 | Streaming block protocol | **Block yields `String` deltas.** Curator unwraps RubyLLM's `Chunk` to `chunk.content`. Chunk-level metadata (token counts, finish reason) stays internal — captured in trace steps + persisted assistant `Message`. Refusal path yields exactly one string. M6's `/api/stream` becomes `Curator.ask(...) { \|delta\| stream.write(delta) }`. |
 | 5 | `Curator.ask` kwarg signature | **`(query, knowledge_base:, limit:, threshold:, strategy:, system_prompt:, chat_model:)`** — search's signature plus per-call prompt + chat-model overrides. `chat_model:` snapshotted to power side-by-side comparison in M5/M6 Query Console. `strict_grounding` / `include_citations` stay KB-only for v1; revisit only if Query Console UX demands. |
@@ -628,12 +633,15 @@ Captured from `/ideate` session on 2026-04-27.
 
 **Inline decisions (made without asking):**
 
-- **`curator_scope: nil` justification**: tagging ad-hoc asks with
-  `"ask"` or `"ask:<slug>"` would overload the column with two
-  meanings ("which UI" + "is this an API ask"), forcing M8 chat
-  UIs to filter on disjunction. KB association is already on
-  `curator_retrievals.knowledge_base_id`; `Chat.where(curator_scope:
-  nil)` is the cheap query for "all ad-hoc asks."
+- **Ask-flow chat / Curator metadata separation**
+  (revised in M8 Phase 0): tagging ad-hoc asks via a `chats`-side
+  column would overload that column with two meanings ("which UI" +
+  "is this an API ask"), forcing M8 chat UIs to filter on
+  disjunction. M4 originally landed `curator_scope: nil` on a
+  `chats.curator_scope` column; M8 Phase 0 moved chat-side Curator
+  state into the Curator-owned `curator_chat_bindings` table, so
+  ask-flow chats simply have no binding row. KB association for
+  ask-flow stays on `curator_retrievals.knowledge_base_id`.
 - **Refusal text v1**: hardcoded constant
   `Curator::Prompt::Templates::REFUSAL_MESSAGE`. Per-KB override
   column is a v2 addition once operators ask for it.

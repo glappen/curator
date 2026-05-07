@@ -74,7 +74,7 @@ RSpec.describe Curator::Answer do
     end
 
     def make_assistant_message
-      chat = Chat.create!(model: kb_real.chat_model, curator_scope: nil)
+      chat = Chat.create!(model: kb_real.chat_model)
       chat.add_message(role: :user,      content: "q")
       chat.add_message(role: :assistant, content: "stored answer")
     end

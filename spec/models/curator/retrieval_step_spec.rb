@@ -9,6 +9,11 @@ RSpec.describe Curator::RetrievalStep, type: :model do
     expect(build(:curator_retrieval_step, status: "pending")).not_to be_valid
   end
 
+  it "accepts :tool_call_started and :tool_call_completed (M8)" do
+    expect(build(:curator_retrieval_step, step_type: "tool_call_started")).to be_valid
+    expect(build(:curator_retrieval_step, step_type: "tool_call_completed")).to be_valid
+  end
+
   it "enforces sequence uniqueness within a retrieval" do
     retrieval = create(:curator_retrieval)
     create(:curator_retrieval_step, retrieval: retrieval, sequence: 0)

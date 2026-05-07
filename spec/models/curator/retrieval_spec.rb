@@ -9,6 +9,18 @@ RSpec.describe Curator::Retrieval, type: :model do
     end
   end
 
+  describe "ORIGINS" do
+    it "includes the M8 :chat_tool value" do
+      expect(described_class::ORIGINS).to include(:chat_tool)
+    end
+
+    it "accepts :chat_tool via the enum" do
+      r = build(:curator_retrieval, origin: :chat_tool)
+      expect(r).to be_valid
+      expect(r.origin).to eq("chat_tool")
+    end
+  end
+
   describe "associations" do
     it "permits a nil chat and message" do
       expect(build(:curator_retrieval, chat: nil, message: nil)).to be_valid

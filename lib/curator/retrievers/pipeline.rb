@@ -18,7 +18,9 @@ module Curator
 
       attr_reader :query, :knowledge_base, :strategy, :limit, :threshold
 
-      def self.call(retrieval_row = nil, **kwargs) = new(**kwargs).call(retrieval_row)
+      def self.call(retrieval_row = nil, persist_hits: true, **kwargs)
+        new(**kwargs).call(retrieval_row, persist_hits: persist_hits)
+      end
 
       def initialize(query:, knowledge_base: nil, limit: nil, threshold: nil, strategy: nil)
         @query = query
@@ -35,15 +37,42 @@ module Curator
       # Run the retrieval and return the ordered hits. Caller owns the
       # `retrieval_row` lifecycle (open before the call, close after);
       # Pipeline only reads it to attach trace step rows and (when the
-      # row is non-nil) bulk-insert the per-hit audit trail into
-      # `curator_retrieval_hits`. Centralizing the write here means
-      # both `Curator.retrieve` and `Curator.ask` get the same audit
-      # trail through one site, and a failed insert flips the parent
-      # row to `:failed` via the caller's existing `mark_failed!`.
-      def call(retrieval_row)
+      # row is non-nil and `persist_hits:` is true) bulk-insert the
+      # per-hit audit trail into `curator_retrieval_hits`. Centralizing
+      # the write here means both `Curator.retrieve` and `Curator.ask`
+      # get the same audit trail through one site, and a failed insert
+      # flips the parent row to `:failed` via the caller's existing
+      # `mark_failed!`.
+      #
+      # Chat-tool retrievals (M8 `Curator::Chat::Tools::Retrieve`) pass
+      # `persist_hits: false` because they renumber ranks across multiple
+      # tool calls within one turn before writing the audit rows, and
+      # `(retrieval_id, rank)` is uniquely indexed.
+      def call(retrieval_row, persist_hits: true)
         hits = execute_strategy(retrieval_row)
-        persist_hits!(retrieval_row, hits) if retrieval_row
+        self.class.persist_hits!(retrieval_row, hits) if retrieval_row && persist_hits
         hits
+      end
+
+      # Class-method form of the bulk hit insert. Public so chat-mode
+      # callers can persist with renumbered ranks after a `call(...,
+      # persist_hits: false)` round-trip. Idempotent on empty hits.
+      def self.persist_hits!(retrieval_row, hits)
+        return if hits.empty?
+        rows = hits.map do |h|
+          {
+            retrieval_id:  retrieval_row.id,
+            chunk_id:      h.chunk_id,
+            document_id:   h.document_id,
+            rank:          h.rank,
+            score:         h.score,
+            document_name: h.document_name,
+            page_number:   h.page_number,
+            text:          h.text,
+            source_url:    h.source_url
+          }
+        end
+        Curator::RetrievalHit.insert_all!(rows)
       end
 
       private
@@ -146,29 +175,6 @@ module Curator
           meta[:keyword_count] = keyword_hits.size
           Curator::Retrievers::Hybrid.fuse(vector_hits, keyword_hits, limit: @limit)
         end
-      end
-
-      # Snapshots `text` / `document_name` / `page_number` /
-      # `source_url` so reconstruction survives downstream chunk
-      # re-chunking and document deletion. One round-trip per
-      # retrieval; failure raises and the caller's `mark_failed!`
-      # wrapper flips the parent row to `:failed`.
-      def persist_hits!(retrieval_row, hits)
-        return if hits.empty?
-        rows = hits.map do |h|
-          {
-            retrieval_id:  retrieval_row.id,
-            chunk_id:      h.chunk_id,
-            document_id:   h.document_id,
-            rank:          h.rank,
-            score:         h.score,
-            document_name: h.document_name,
-            page_number:   h.page_number,
-            text:          h.text,
-            source_url:    h.source_url
-          }
-        end
-        Curator::RetrievalHit.insert_all!(rows)
       end
     end
   end

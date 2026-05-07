@@ -21,6 +21,21 @@ living document — Phase 0 ships those edits.
 
 ## Completed
 
+- **Phase 2 — Retrieval tool + Assembler extraction.** Public class
+  method `Curator::Prompt::Assembler.render_context_block(hits:,
+  rank_offset: 0)` (existing `#call` refactored to use it; behavior
+  unchanged). New `Curator::Chat::Tools::Retrieve < RubyLLM::Tool`
+  with single `query: String` param; `#execute` runs the shared
+  `Curator::Retrievers::Pipeline` with `persist_hits: false`,
+  renumbers hits against an instance-level `@rank_cursor`, persists
+  via the now-public `Pipeline.persist_hits!` class method, and
+  returns `{ context: <Format-1 string>, hit_count: N }`. Brackets
+  the invocation with `:tool_call_started`/`:tool_call_completed`
+  trace step rows whose payloads match the documented schema. Tool
+  require lives in `lib/curator-rails.rb` (after `ruby_llm` loads),
+  not `lib/curator.rb` — `RubyLLM::Tool` isn't defined when
+  spec_helper requires curator pre-Rails.
+
 - **Phase 3a — `Curator::Chat` public API contract.** `lib/curator/chat.rb`
   ships the wrapper (`self.create`, `self.find`, `#ask`, `#history`,
   `#id`, `#knowledge_base`, `#raw`); `#ask` and `#history` raise
@@ -129,29 +144,7 @@ against a frozen `Curator::Chat` public API.
     yields no events to the subscriber. Sequence-order assertion
     on the events received.
 
-- [ ] **Phase 2 — Retrieval tool + Assembler extraction.**
-  - `lib/curator/prompt/assembler.rb` — extract
-    `Assembler.render_context_block(hits:, rank_offset: 0)` as a
-    public class method. Existing `#call` refactored to use it
-    (no behavior change). Spec covers `rank_offset: > 0` case
-    (continuous renumbering).
-  - New `lib/curator/chat/tools/retrieve.rb` —
-    `Curator::Chat::Tools::Retrieve < RubyLLM::Tool`. Single param
-    `query: String` with description that instructs the LLM to
-    pass a search-optimized rephrasing of the user's most recent
-    message. `#execute` delegates to
-    `Curator::Retrievers::Pipeline`, applies cumulative rank
-    renumbering against tool-instance state, returns a hash
-    `{ context: <Format-1 string>, hit_count: N }`. Wraps the
-    invocation in `Tracing.record(:tool_call_started)` ... body ...
-    `Tracing.record(:tool_call_completed)`.
-  - **Validate:** unit spec instantiates the tool with a fixture
-    KB + retrieval row, invokes `#execute` twice, asserts:
-    - First invocation returns ranks `[1..K]`.
-    - Second invocation returns ranks `[K+1..K+M]`.
-    - Format-1 string matches `[N] From "..." (page N): ...`.
-    - Step rows written with payloads matching the documented
-      schema.
+- [x] **Phase 2 — Retrieval tool + Assembler extraction.**
 
 ### Block C — two parallel tracks (after Block B)
 

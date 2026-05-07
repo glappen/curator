@@ -107,6 +107,36 @@ RSpec.describe Curator::Prompt::Assembler do
     end
   end
 
+  describe ".render_context_block" do
+    it "returns the empty string for nil or empty hits" do
+      expect(described_class.render_context_block(hits: nil)).to eq("")
+      expect(described_class.render_context_block(hits: [])).to eq("")
+    end
+
+    it "renders hits with the M4 [N] header format" do
+      hits = [
+        make_hit(rank: 1, document_name: "alpha.md", text: "first body"),
+        make_hit(rank: 2, document_name: "beta.md",  page_number: 7, text: "second body")
+      ]
+      block = described_class.render_context_block(hits: hits)
+      expect(block).to start_with("#{described_class::CONTEXT_HEADER}\n\n")
+      expect(block).to include(%([1] From "alpha.md":\nfirst body))
+      expect(block).to include(%([2] From "beta.md" (page 7):\nsecond body))
+    end
+
+    it "shifts displayed ranks by rank_offset (continuous renumbering)" do
+      hits = [
+        make_hit(rank: 1, document_name: "gamma.md", text: "g body"),
+        make_hit(rank: 2, document_name: "delta.md", text: "d body")
+      ]
+      block = described_class.render_context_block(hits: hits, rank_offset: 4)
+      expect(block).to include(%([5] From "gamma.md":\ng body))
+      expect(block).to include(%([6] From "delta.md":\nd body))
+      expect(block).not_to match(/\[1\] From/)
+      expect(block).not_to match(/\[2\] From/)
+    end
+  end
+
   describe "system_prompt_hash" do
     it "is stable for identical inputs" do
       hits   = [ make_hit(rank: 1, text: "same body") ]

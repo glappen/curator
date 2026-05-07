@@ -14,9 +14,31 @@ module Curator
     class Assembler
       CONTEXT_HEADER = "Context:".freeze
 
+      # Render the citation-numbered context block. Public so chat-mode
+      # tool calls (M8 `Curator::Chat::Tools::Retrieve`) can produce the
+      # same Format-1 string the Asker injects into one-shot prompts. The
+      # `rank_offset:` shifts displayed `[N]` markers — used to renumber
+      # hits continuously across multiple tool calls within a single chat
+      # turn so the LLM never sees a duplicate citation marker.
+      #
+      # Returns "" when hits is nil/empty so callers can paste the result
+      # into a larger prompt template without conditional logic.
+      def self.render_context_block(hits:, rank_offset: 0)
+        return "" if hits.nil? || hits.empty?
+
+        body = hits.map { |hit| render_hit(hit, rank_offset) }.join("\n\n")
+        "#{CONTEXT_HEADER}\n\n#{body}"
+      end
+
+      def self.render_hit(hit, rank_offset)
+        page = hit.page_number.nil? ? "" : " (page #{hit.page_number})"
+        %([#{hit.rank + rank_offset}] From "#{hit.document_name}"#{page}:\n#{hit.text})
+      end
+      private_class_method :render_hit
+
       def call(kb:, hits:)
         instructions = instructions_for(kb)
-        context      = context_block(hits)
+        context      = self.class.render_context_block(hits: hits)
         text         = context.empty? ? instructions : "#{instructions}\n\n#{context}"
 
         {
@@ -37,18 +59,6 @@ module Curator
         else
           Templates::DEFAULT_INSTRUCTIONS_WITHOUT_CITATIONS
         end
-      end
-
-      def context_block(hits)
-        return "" if hits.nil? || hits.empty?
-
-        body = hits.map { |hit| render_hit(hit) }.join("\n\n")
-        "#{CONTEXT_HEADER}\n\n#{body}"
-      end
-
-      def render_hit(hit)
-        page = hit.page_number.nil? ? "" : " (page #{hit.page_number})"
-        %([#{hit.rank}] From "#{hit.document_name}"#{page}:\n#{hit.text})
       end
     end
   end

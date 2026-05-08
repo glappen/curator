@@ -230,16 +230,12 @@ RSpec.describe "Curator::Documents", type: :request do
   end
 
   describe "POST /curator/kbs/:slug/documents/:id/reingest" do
-    it "calls Curator.reingest with the document and flips status back to :pending" do
+    it "flips status back to :pending and enqueues IngestDocumentJob" do
       doc = create(:curator_document, knowledge_base: knowledge_base, status: :complete)
-      # Match by id (not by AR identity) — the controller looks the doc up
-      # fresh, so the instance Curator.reingest receives is a different
-      # object from `doc`.
-      expect(Curator).to receive(:reingest)
-        .with(have_attributes(id: doc.id))
-        .and_call_original
 
-      post "/curator/kbs/kb-docs/documents/#{doc.id}/reingest"
+      expect {
+        post "/curator/kbs/kb-docs/documents/#{doc.id}/reingest"
+      }.to have_enqueued_job(Curator::IngestDocumentJob).with(doc.id)
 
       expect(doc.reload.status).to eq("pending")
       expect(response).to redirect_to("/curator/kbs/kb-docs/documents")

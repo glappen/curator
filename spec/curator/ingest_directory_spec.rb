@@ -151,20 +151,23 @@ RSpec.describe Curator, ".ingest_directory" do
 
   it "uses the kreuzberg extension list when config.extractor = :kreuzberg" do
     Curator.configure { |c| c.extractor = :kreuzberg }
+
+    # Stub only the kreuzberg adapter's external entry point so the rest of
+    # the ingest pipeline (URL/file normalization, document creation,
+    # IngestResult shaping) runs for real. The behavior under test is
+    # "the directory walker picks up .pdf when extractor = :kreuzberg",
+    # observable via the resulting documents.
+    fake_result = double(content: "stub body", mime_type: "text/plain", pages: nil)
+    allow(::Kreuzberg).to receive(:extract_file_sync).and_return(fake_result)
+
     Dir.mktmpdir do |dir|
       write(dir, "a.md",  "# a\n")
       write(dir, "b.pdf", "%PDF-fake")
 
-      # We don't actually want to invoke the kreuzberg adapter — just verify
-      # the glob picks up a .pdf which the basic extractor would skip.
-      seen = []
-      allow(Curator).to receive(:ingest) do |input, **|
-        seen << File.basename(input.to_s)
-        Curator::IngestResult.new(document: nil, status: :failed, reason: "stub")
-      end
+      results = Curator.ingest_directory(dir, knowledge_base: kb)
 
-      Curator.ingest_directory(dir, knowledge_base: kb)
-      expect(seen.sort).to eq(%w[a.md b.pdf])
+      titles = results.map { |r| r.document&.title }.compact.sort
+      expect(titles).to eq(%w[a.md b.pdf])
     end
   end
 end

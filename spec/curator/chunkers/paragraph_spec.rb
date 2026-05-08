@@ -129,13 +129,12 @@ RSpec.describe Curator::Chunkers::Paragraph do
       chunks  = chunker.chunk(extraction(content))
 
       expect(chunks.size).to be >= 2
-      # Every chunk past the first starts with either a word char or
-      # whitespace — never a partial-word tail from the previous chunk.
+      # Every chunk past the first starts with either whitespace or a
+      # complete `word` token — never a partial-word tail from the
+      # previous chunk.
       chunks[1..].each do |c|
-        first_char = c[:content][0]
-        prior_char_of_the_word = c[:content][/\A\S+/]
-        # The content should start with a whole word (or leading whitespace).
-        expect(first_char).to satisfy { |ch| ch == " " || c[:content].start_with?(word) || prior_char_of_the_word == word }
+        leading_token = c[:content][/\A\S+/]
+        expect(c[:content]).to(start_with(" ").or(satisfy { leading_token == word }))
       end
     end
 

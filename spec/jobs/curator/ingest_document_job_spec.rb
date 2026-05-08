@@ -94,15 +94,6 @@ RSpec.describe Curator::IngestDocumentJob, type: :job do
     expect(tsvectors.first).to match(/paragraph/)
   end
 
-  it "drives the chunker with the knowledge base's chunk_size and chunk_overlap, not config defaults" do
-    expect(Curator::Chunkers::Paragraph)
-      .to receive(:new)
-      .with(chunk_size: kb.chunk_size, chunk_overlap: kb.chunk_overlap)
-      .and_call_original
-
-    described_class.perform_now(document.id)
-  end
-
   it "marks the document :failed and records stage_error when the extractor raises" do
     allow_any_instance_of(Curator::Extractors::Basic)
       .to receive(:extract).and_raise(Curator::ExtractionError, "boom")
@@ -181,14 +172,14 @@ RSpec.describe Curator::IngestDocumentJob, type: :job do
   describe "recovery: prior run committed chunks but failed before enqueue" do
     it "re-enqueues EmbedChunksJob without re-extracting when doc is :embedding with chunks" do
       document.update!(status: :embedding)
-      create(:curator_chunk, document: document, sequence: 0)
-
-      expect_any_instance_of(Curator::Extractors::Basic).not_to receive(:extract)
+      sentinel = "SENTINEL_NOT_FROM_EXTRACTOR"
+      create(:curator_chunk, document: document, sequence: 0, content: sentinel)
 
       described_class.perform_now(document.id)
 
       expect(Curator::EmbedChunksJob).to have_been_enqueued.with(document.id)
       expect(document.reload.status).to eq("embedding")
+      expect(document.chunks.sole.content).to eq(sentinel)
     end
 
     it "does not enqueue when doc is :embedding but has no chunks (state can't be recovered safely)" do

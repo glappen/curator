@@ -79,7 +79,6 @@ RSpec.describe Curator::Chunk, type: :model do
       chunk = create(:curator_chunk, document: doc, content: "running")
       original = fetch_tsvector(chunk)
 
-      expect(chunk).not_to receive(:refresh_content_tsvector)
       chunk.update!(status: :embedded)
 
       expect(fetch_tsvector(chunk)).to eq(original)

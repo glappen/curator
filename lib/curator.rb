@@ -26,7 +26,7 @@ require "curator/prompt/templates"
 require "curator/prompt/assembler"
 require "curator/asker"
 require "curator/chat"
-require "curator/evaluator"
+
 require "curator/reembed"
 require "curator/model_options"
 require "curator/tasks/export"
@@ -217,7 +217,7 @@ module Curator
     def evaluate(retrieval:, rating:, evaluator_role:, evaluator_id: nil,
                  feedback: nil, ideal_answer: nil, failure_categories: [],
                  evaluation_id: nil)
-      Evaluator.call(
+      Curator::Evaluation.create_or_update!(
         retrieval:          retrieval,
         rating:             rating,
         evaluator_role:     evaluator_role,

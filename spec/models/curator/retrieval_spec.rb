@@ -36,4 +36,87 @@ RSpec.describe Curator::Retrieval, type: :model do
         .and change(Curator::Evaluation, :count).by(-1)
     end
   end
+
+  describe ".with_filters" do
+    let(:kb)       { create(:curator_knowledge_base, slug: "default") }
+    let(:other_kb) { create(:curator_knowledge_base, slug: "other") }
+
+    let!(:adhoc) do
+      create(:curator_retrieval,
+             knowledge_base: kb, query: "alpha", origin: :adhoc, status: :success)
+    end
+    let!(:console_run) do
+      create(:curator_retrieval,
+             knowledge_base: kb, query: "beta", origin: :console, status: :failed)
+    end
+    let!(:review_run) do
+      create(:curator_retrieval,
+             knowledge_base: kb, query: "gamma", origin: :console_review)
+    end
+    let!(:other_kb_run) do
+      create(:curator_retrieval,
+             knowledge_base: other_kb, query: "delta", origin: :adhoc)
+    end
+
+    it "hides :console_review rows by default" do
+      ids = described_class.with_filters({}).pluck(:id)
+      expect(ids).to     include(adhoc.id, console_run.id, other_kb_run.id)
+      expect(ids).not_to include(review_run.id)
+    end
+
+    it "includes :console_review rows when show_review is truthy" do
+      ids = described_class.with_filters(show_review: "true").pluck(:id)
+      expect(ids).to include(review_run.id)
+    end
+
+    it "filters by knowledge_base_id" do
+      ids = described_class.with_filters(knowledge_base_id: kb.id).pluck(:id)
+      expect(ids).to     include(adhoc.id, console_run.id)
+      expect(ids).not_to include(review_run.id, other_kb_run.id)
+    end
+
+    it "filters by KB slug" do
+      ids = described_class.with_filters(kb_slug: "other").pluck(:id)
+      expect(ids).to     include(other_kb_run.id)
+      expect(ids).not_to include(adhoc.id)
+    end
+
+    it "filters by status" do
+      ids = described_class.with_filters(status: "failed").pluck(:id)
+      expect(ids).to     include(console_run.id)
+      expect(ids).not_to include(adhoc.id)
+    end
+
+    it "filters by ILIKE query substring" do
+      ids = described_class.with_filters(query: "alph").pluck(:id)
+      expect(ids).to     include(adhoc.id)
+      expect(ids).not_to include(console_run.id)
+    end
+
+    it "filters by `from` date inclusively" do
+      adhoc.update!(created_at: 3.days.ago)
+      ids = described_class.with_filters(from: 1.day.ago.to_date.iso8601).pluck(:id)
+      expect(ids).not_to include(adhoc.id)
+      expect(ids).to     include(console_run.id)
+    end
+
+    it "ignores a malformed `from` date" do
+      ids = described_class.with_filters(from: "garbage").pluck(:id)
+      expect(ids).to include(adhoc.id)
+    end
+
+    it "filters by rating" do
+      create(:curator_evaluation, retrieval: adhoc, rating: :positive)
+      ids = described_class.with_filters(rating: "positive").pluck(:id)
+      expect(ids).to     include(adhoc.id)
+      expect(ids).not_to include(console_run.id)
+    end
+
+    it "filters by unrated" do
+      create(:curator_evaluation, retrieval: adhoc, rating: :positive)
+      ids = described_class.with_filters(unrated: "true").pluck(:id)
+      expect(ids).not_to include(adhoc.id)
+      expect(ids).to     include(console_run.id)
+    end
+  end
 end

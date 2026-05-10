@@ -36,7 +36,7 @@
     <div class="field">
       <%= f.label :evaluator_role, "Evaluator role" %>
       <%= f.select :evaluator_role,
-                   Curator::Evaluator::EVALUATOR_ROLES.map { |r| [ r.to_s.titleize, r ] },
+                   Curator::Evaluation::EVALUATOR_ROLES.map { |r| [ r.to_s.titleize, r ] },
                    include_blank: "Any", selected: @filters[:evaluator_role] %>
     </div>
 

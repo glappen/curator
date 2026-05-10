@@ -9,6 +9,7 @@ module Curator
   # back button restores the operator's view without server-side state.
   class RetrievalsController < ApplicationController
     include Curator::PaginationHelper
+    include Curator::StreamingExport
     # `ActionController::Live` enables `response.stream.write` for the
     # `#export` action so a multi-MB CSV download surfaces row-by-row
     # instead of buffering the full result set in the worker's heap.
@@ -25,9 +26,9 @@ module Curator
 
     def index
       @filters = filter_params
-      scope    = filtered_scope(@filters)
-                   .includes(:knowledge_base)
-                   .order(created_at: :desc)
+      scope    = Retrieval.with_filters(filter_params)
+                          .includes(:knowledge_base)
+                          .order(created_at: :desc)
       @page    = paginate(scope, page: params[:page], per: params[:per])
       @retrievals       = @page.records
       # Single grouped aggregate avoids an N+1 on the per-row eval-count
@@ -52,38 +53,33 @@ module Curator
 
       case format
       when "csv"
-        # Headers MUST be set before the first `response.stream.write`
-        # — once the response buffer flushes, headers are sealed.
         response.headers["Content-Type"]        = "text/csv; charset=utf-8"
         response.headers["Content-Disposition"] = ActionDispatch::Http::ContentDisposition.format(
           disposition: "attachment", filename: filename
         )
-        # Defeats nginx response buffering when this is reverse-proxied.
         response.headers["X-Accel-Buffering"]   = "no"
-        # `ETag` middleware would buffer the whole response to compute
-        # the digest, defeating the streaming property — explicitly
-        # signal a non-cacheable streamed body.
         response.headers["Cache-Control"]       = "no-cache"
         begin
-          # `ActionController::Live` runs the action body in a separate
-          # thread, which does not inherit the request thread's
-          # checked-out database connection. Without this `with_connection`
-          # block, ActiveRecord queries on the streaming thread silently
-          # return empty results in some pool configurations (the spec
-          # suite happens to work because transactional fixtures keep
-          # the test connection alive across threads — production does
-          # not).
           ActiveRecord::Base.connection_pool.with_connection do
-            Curator::Retrievals::Exporter.stream(io: response.stream,
-                                                 format: "csv",
-                                                 filters: filter_params)
+            scope = Retrieval.with_filters(filter_params)
+                             .includes(:knowledge_base, :message, :retrieval_hits, :evaluations)
+            stream_csv(
+              io:     response.stream,
+              rows:   scope.find_each(order: :desc),
+              columns: RETRIEVAL_EXPORT_COLUMNS
+            ) { |r| retrieval_export_row(r) }
           end
         ensure
           response.stream.close
         end
       when "json"
         io = StringIO.new
-        Curator::Retrievals::Exporter.stream(io: io, format: "json", filters: filter_params)
+        scope = Retrieval.with_filters(filter_params)
+                         .includes(:knowledge_base, :message, :retrieval_hits, :evaluations)
+        stream_json(
+          io:   io,
+          rows: scope.find_each(order: :desc)
+        ) { |r| retrieval_export_row(r) }
         send_data io.string, type: "application/json",
                              disposition: "attachment", filename: filename
       else
@@ -128,50 +124,34 @@ module Curator
       }
     end
 
-    def filtered_scope(filters)
-      scope = Retrieval.all
-      scope = scope.where(origin: %w[adhoc console]) unless filters[:show_review]
-      scope = scope.where(knowledge_base_id: filters[:knowledge_base_id]) if filters[:knowledge_base_id]
-      if (from = parse_date(filters[:from]))
-        scope = scope.where("created_at >= ?", from)
-      end
-      if (to = parse_date(filters[:to]))
-        scope = scope.where("created_at <  ?", to + 1)
-      end
-      scope = scope.where(status: filters[:status])                   if filters[:status]
-      scope = scope.where(chat_model: filters[:chat_model])           if filters[:chat_model]
-      scope = scope.where(embedding_model: filters[:embedding_model]) if filters[:embedding_model]
-      scope = scope.where("query ILIKE ?", "%#{filters[:query]}%")    if filters[:query]
-      scope = apply_rating_filter(scope, filters)
-      scope
+    RETRIEVAL_EXPORT_COLUMNS = %i[
+      retrieval_id query answer kb_slug chat_model embedding_model
+      status origin retrieved_hit_count eval_count created_at
+    ].freeze
+
+    RETRIEVAL_ANSWER_TRUNCATION = 500
+
+    def retrieval_export_row(retrieval)
+      {
+        retrieval_id:        retrieval.id,
+        query:               retrieval.query,
+        answer:              truncated_answer(retrieval.message&.content),
+        kb_slug:             retrieval.knowledge_base.slug,
+        chat_model:          retrieval.chat_model,
+        embedding_model:     retrieval.embedding_model,
+        status:              retrieval.status,
+        origin:              retrieval.origin,
+        retrieved_hit_count: retrieval.retrieval_hits.size,
+        eval_count:          retrieval.evaluations.size,
+        created_at:          retrieval.created_at&.iso8601
+      }
     end
 
-    # Rating filter joins to evaluations; "unrated" is exclusive (an
-    # explicit rating filter implies the row has at least one eval, so
-    # `unrated=true` and a non-blank rating together make no sense).
-    # The filter form's `retrievals-filter` Stimulus controller disables
-    # whichever control is dominated client-side so the conflict doesn't
-    # reach this method in normal use; the precedence here is the
-    # no-JS fallback. Rating wins because it's the more specific signal.
-    def apply_rating_filter(scope, filters)
-      if filters[:rating]
-        scope.joins(:evaluations).where(curator_evaluations: { rating: filters[:rating] }).distinct
-      elsif filters[:unrated]
-        scope.where.missing(:evaluations)
-      else
-        scope
-      end
-    end
+    def truncated_answer(text)
+      return nil if text.nil?
+      return text if text.length <= RETRIEVAL_ANSWER_TRUNCATION
 
-    # Permissive date parse: a blank or malformed `from`/`to` querystring
-    # should drop the clause entirely, not 500 and not silently broaden
-    # the result set (which is what falling back to `Date.current` did —
-    # `to:` < tomorrow matches every row, hiding the typo).
-    def parse_date(value)
-      return nil if value.blank?
-      Date.parse(value)
-    rescue ArgumentError, TypeError
-      nil
+      "#{text[0, RETRIEVAL_ANSWER_TRUNCATION - 1]}…"
     end
 
     # Distinct dropdown values for the chat_model / embedding_model

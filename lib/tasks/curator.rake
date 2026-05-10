@@ -151,11 +151,42 @@ namespace :curator do
     desc "Export retrievals to STDOUT. " \
          "FORMAT=<csv|json> [KB=<slug>] [SINCE=<iso8601>]"
     task export: :environment do
+      format = ENV["FORMAT"].to_s.downcase
+      unless %w[csv json].include?(format)
+        abort "FORMAT is required and must be csv|json (got #{ENV['FORMAT'].inspect})"
+      end
+
+      filters = {}
+      filters[:kb_slug] = ENV["KB"] if ENV["KB"].present?
+      filters[:from]    = ENV["SINCE"] if ENV["SINCE"].present?
+
+      scope = Curator::Retrieval.with_filters(filters)
+                                .includes(:knowledge_base, :message, :retrieval_hits, :evaluations)
+
+      columns = %i[
+        retrieval_id query answer kb_slug chat_model embedding_model
+        status origin retrieved_hit_count eval_count created_at
+      ]
+
       Curator::Tasks::Export.run(
-        exporter: Curator::Retrievals::Exporter,
-        env:      ENV,
-        io:       $stdout
-      )
+        format: format, io: $stdout, scope: scope, columns: columns
+      ) do |r|
+        text   = r.message&.content
+        answer = text.nil? ? nil : (text.length > 500 ? "#{text[0, 499]}…" : text)
+        {
+          retrieval_id:        r.id,
+          query:               r.query,
+          answer:              answer,
+          kb_slug:             r.knowledge_base.slug,
+          chat_model:          r.chat_model,
+          embedding_model:     r.embedding_model,
+          status:              r.status,
+          origin:              r.origin,
+          retrieved_hit_count: r.retrieval_hits.size,
+          eval_count:          r.evaluations.size,
+          created_at:          r.created_at&.iso8601
+        }
+      end
     end
   end
 
@@ -163,11 +194,47 @@ namespace :curator do
     desc "Export evaluations to STDOUT. " \
          "FORMAT=<csv|json> [KB=<slug>] [SINCE=<iso8601>]"
     task export: :environment do
+      format = ENV["FORMAT"].to_s.downcase
+      unless %w[csv json].include?(format)
+        abort "FORMAT is required and must be csv|json (got #{ENV['FORMAT'].inspect})"
+      end
+
+      filters = {}
+      filters[:kb]    = ENV["KB"] if ENV["KB"].present?
+      filters[:since] = ENV["SINCE"] if ENV["SINCE"].present?
+
+      scope = Curator::Evaluation.with_filters(filters)
+                                 .includes(retrieval: %i[knowledge_base message])
+
+      columns = %i[
+        retrieval_id query answer kb_slug chat_model embedding_model
+        rating feedback ideal_answer failure_categories
+        evaluator_id evaluator_role created_at
+      ]
+
       Curator::Tasks::Export.run(
-        exporter: Curator::Evaluations::Exporter,
-        env:      ENV,
-        io:       $stdout
-      )
+        format: format, io: $stdout, scope: scope, columns: columns
+      ) do |e|
+        r      = e.retrieval
+        text   = r.message&.content
+        answer = text.nil? ? nil : (text.length > 500 ? "#{text[0, 499]}…" : text)
+        cats   = Array(e.failure_categories)
+        {
+          retrieval_id:       r.id,
+          query:              r.query,
+          answer:             answer,
+          kb_slug:            r.knowledge_base.slug,
+          chat_model:         r.chat_model,
+          embedding_model:    r.embedding_model,
+          rating:             e.rating,
+          feedback:           e.feedback,
+          ideal_answer:       e.ideal_answer,
+          failure_categories: format == "csv" ? (cats.empty? ? nil : cats.join(";")) : cats,
+          evaluator_id:       e.evaluator_id,
+          evaluator_role:     e.evaluator_role,
+          created_at:         e.created_at&.iso8601
+        }
+      end
     end
   end
 end

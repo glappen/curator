@@ -19,6 +19,7 @@ module Curator
   # explicitly deferred to v2+ (see implementation.md "Deferred").
   class EvaluationsController < ApplicationController
     include Curator::PaginationHelper
+    include Curator::StreamingExport
     # `ActionController::Live` enables `response.stream.write` for the
     # `#export` action — see `RetrievalsController` for the rationale.
     include ActionController::Live
@@ -30,7 +31,8 @@ module Curator
 
     def index
       @filters             = filter_params
-      scope                = apply_filters(base_scope)
+      scope                = Evaluation.with_filters(filter_params)
+                                         .order("curator_evaluations.created_at DESC, curator_evaluations.id DESC")
       @page                = paginate(scope, page: params[:page], per: params[:per])
       @evaluations         = @page.records.includes(retrieval: :knowledge_base)
       @kb_options          = Curator::KnowledgeBase.order(:name).pluck(:name, :slug)
@@ -53,20 +55,24 @@ module Curator
         response.headers["X-Accel-Buffering"]   = "no"
         response.headers["Cache-Control"]       = "no-cache"
         begin
-          # See `RetrievalsController#export` — the live action thread
-          # needs an explicit DB checkout or queries silently come
-          # back empty in production.
           ActiveRecord::Base.connection_pool.with_connection do
-            Curator::Evaluations::Exporter.stream(io: response.stream,
-                                                  format: "csv",
-                                                  filters: filter_params)
+            scope = Evaluation.with_filters(filter_params)
+            stream_csv(
+              io:      response.stream,
+              rows:    scope.find_each(order: :desc),
+              columns: EVALUATION_EXPORT_COLUMNS
+            ) { |e| evaluation_export_row(e, :csv) }
           end
         ensure
           response.stream.close
         end
       when "json"
         io = StringIO.new
-        Curator::Evaluations::Exporter.stream(io: io, format: "json", filters: filter_params)
+        scope = Evaluation.with_filters(filter_params)
+        stream_json(
+          io:   io,
+          rows: scope.find_each(order: :desc)
+        ) { |e| evaluation_export_row(e, :json) }
         send_data io.string, type: "application/json",
                              disposition: "attachment", filename: filename
       else
@@ -75,7 +81,7 @@ module Curator
     end
 
     def create
-      evaluation = Curator.evaluate(
+      evaluation = Curator::Evaluation.create_or_update!(
         retrieval:          retrieval_param,
         rating:             params[:rating],
         evaluator_role:     :reviewer,
@@ -103,61 +109,57 @@ module Curator
 
     private
 
-    def base_scope
-      Curator::Evaluation
-        .joins(retrieval: :knowledge_base)
-        .order("curator_evaluations.created_at DESC, curator_evaluations.id DESC")
+    EVALUATION_EXPORT_COLUMNS = %i[
+      retrieval_id query answer kb_slug chat_model embedding_model
+      rating feedback ideal_answer failure_categories
+      evaluator_id evaluator_role created_at
+    ].freeze
+
+    EVALUATION_ANSWER_TRUNCATION = 500
+
+    def evaluation_export_row(evaluation, format)
+      retrieval = evaluation.retrieval
+      cats      = Array(evaluation.failure_categories)
+      {
+        retrieval_id:       retrieval.id,
+        query:              retrieval.query,
+        answer:             truncated_answer(retrieval.message&.content),
+        kb_slug:            retrieval.knowledge_base.slug,
+        chat_model:         retrieval.chat_model,
+        embedding_model:    retrieval.embedding_model,
+        rating:             evaluation.rating,
+        feedback:           evaluation.feedback,
+        ideal_answer:       evaluation.ideal_answer,
+        failure_categories: serialize_categories(cats, format),
+        evaluator_id:       evaluation.evaluator_id,
+        evaluator_role:     evaluation.evaluator_role,
+        created_at:         evaluation.created_at&.iso8601
+      }
     end
 
-    # Filters are chained conditionally so absent querystring keys behave
-    # as "no filter". Date inputs are coerced to ISO-8601 dates and
-    # silently dropped on parse failure (a malformed `since=garbage`
-    # becomes a no-op rather than a 400 — the index is exploratory).
-    def apply_filters(scope)
-      f = @filters
-      scope = scope.where(curator_knowledge_bases: { slug: f[:kb] })             if f[:kb].present?
-      scope = scope.where(rating: f[:rating])                                    if f[:rating].present?
-      scope = scope.where(evaluator_role: f[:evaluator_role])                    if f[:evaluator_role].present?
-      scope = scope.where(curator_retrievals: { chat_model: f[:chat_model] })    if f[:chat_model].present?
-      scope = scope.where(curator_retrievals: { embedding_model: f[:embedding_model] }) if f[:embedding_model].present?
+    def truncated_answer(text)
+      return nil if text.nil?
+      return text if text.length <= EVALUATION_ANSWER_TRUNCATION
 
-      if f[:evaluator_id].present?
-        # `sanitize_sql_like` escapes `%` and `_` so a literal substring
-        # like `foo_bar` doesn't silently match `foo-bar` via the LIKE
-        # wildcard. The `%…%` wrapping below is intentionally raw — we
-        # *do* want the result to match anywhere in the column.
-        needle = ActiveRecord::Base.sanitize_sql_like(f[:evaluator_id])
-        scope  = scope.where("curator_evaluations.evaluator_id ILIKE ?", "%#{needle}%")
+      "#{text[0, EVALUATION_ANSWER_TRUNCATION - 1]}…"
+    end
+
+    # CSV cells are flat strings, so categories collapse to a
+    # `;`-joined string (avoids the comma-vs-Excel-delimiter trap).
+    # JSON keeps them as an array because the consumer can iterate
+    # natively. An empty list becomes nil in CSV (renders as a blank
+    # cell — semantically "no value") and `[]` in JSON.
+    def serialize_categories(categories, format)
+      case format
+      when :csv  then categories.empty? ? nil : categories.join(";")
+      when :json then categories
       end
-
-      if (cats = f[:failure_categories]).present?
-        # ANY-of semantics — the eval matches if it carries at least one
-        # of the requested categories. Postgres array overlap operator.
-        scope = scope.where("curator_evaluations.failure_categories && ARRAY[?]::varchar[]", cats)
-      end
-
-      if (since = parse_date(f[:since]))
-        scope = scope.where("curator_evaluations.created_at >= ?", since.beginning_of_day)
-      end
-
-      if (before = parse_date(f[:until]))
-        scope = scope.where("curator_evaluations.created_at <= ?", before.end_of_day)
-      end
-
-      scope
     end
 
     def filter_params
       cats = Array(params[:failure_categories]).reject(&:blank?)
       FILTER_PARAMS.index_with { |key| params[key] }
                    .merge(failure_categories: cats)
-    end
-
-    def parse_date(value)
-      return nil if value.blank?
-      Date.iso8601(value.to_s)
-    rescue ArgumentError
-      nil
     end
 
     def retrieval_param

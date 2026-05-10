@@ -38,6 +38,14 @@ module Curator
         .index_by(&:chunk_id)
     end
 
+    # Known per-file ingest failures: countable and recoverable. Anything
+    # outside this set (DB outage, OOM, programming error) propagates so
+    # operators see the real outage instead of N silently-classified rows.
+    RECOVERABLE_INGEST_ERRORS = [
+      Curator::Error,
+      ActiveRecord::RecordInvalid
+    ].freeze
+
     def create
       files = Array(params[:files]).reject(&:blank?)
       if files.empty?
@@ -46,9 +54,17 @@ module Curator
         return
       end
 
-      result = Documents::IngestBatch.call(kb: @knowledge_base, files: files)
+      counts   = { created: 0, duplicate: 0, failed: 0 }
+      failures = []
+
+      files.each do |file|
+        result = ingest_one(file)
+        counts[result.status] += 1
+        failures << result.reason if result.failed? && result.reason
+      end
+
       redirect_to knowledge_base_documents_path(@knowledge_base),
-                  notice: summary_flash(result.counts, result.failures)
+                  notice: summary_flash(counts, failures)
     end
 
     # Async delete: a single doc with thousands of chunks/embeddings can
@@ -87,6 +103,16 @@ module Curator
     end
 
     private
+
+    def ingest_one(file)
+      Curator.ingest(file, knowledge_base: @knowledge_base)
+    rescue *RECOVERABLE_INGEST_ERRORS => e
+      Curator::IngestResult.new(
+        document: nil,
+        status:   :failed,
+        reason:   "#{e.class}: #{e.message}"
+      )
+    end
 
     def set_knowledge_base
       @knowledge_base = KnowledgeBase.find_by!(slug: params[:knowledge_base_slug])

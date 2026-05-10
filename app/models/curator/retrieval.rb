@@ -69,5 +69,55 @@ module Curator
         )
       )
     end
+
+    # Filter scope that mirrors the querystring contract on
+    # `RetrievalsController#index` so the same filter form drives both
+    # the on-screen table and the export.
+    def self.with_filters(filters)
+      scope = all
+      scope = scope.where(origin: %w[adhoc console]) unless truthy?(filters[:show_review])
+      scope = scope.where(knowledge_base_id: filters[:knowledge_base_id]) if filters[:knowledge_base_id].present?
+      if filters[:kb_slug].present?
+        scope = scope.joins(:knowledge_base)
+                     .where(curator_knowledge_bases: { slug: filters[:kb_slug] })
+      end
+      if (from = parse_date(filters[:from]))
+        scope = scope.where("created_at >= ?", from)
+      end
+      if (to = parse_date(filters[:to]))
+        scope = scope.where("created_at <  ?", to + 1)
+      end
+      scope = scope.where(status: filters[:status])                   if filters[:status].present?
+      scope = scope.where(chat_model: filters[:chat_model])           if filters[:chat_model].present?
+      scope = scope.where(embedding_model: filters[:embedding_model]) if filters[:embedding_model].present?
+      scope = scope.where("query ILIKE ?", "%#{filters[:query]}%")    if filters[:query].present?
+      scope = apply_rating_filter(scope, filters)
+      scope
+    end
+
+    def self.apply_rating_filter(scope, filters)
+      if filters[:rating].present?
+        scope.joins(:evaluations).where(curator_evaluations: { rating: filters[:rating] }).distinct
+      elsif truthy?(filters[:unrated])
+        scope.where.missing(:evaluations)
+      else
+        scope
+      end
+    end
+    private_class_method :apply_rating_filter
+
+    def self.parse_date(value)
+      return value if value.is_a?(Date) || value.is_a?(Time)
+      return nil if value.blank?
+      Date.parse(value.to_s)
+    rescue ArgumentError, TypeError
+      nil
+    end
+    private_class_method :parse_date
+
+    def self.truthy?(value)
+      ActiveModel::Type::Boolean.new.cast(value)
+    end
+    private_class_method :truthy?
   end
 end

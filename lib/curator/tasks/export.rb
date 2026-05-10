@@ -1,40 +1,48 @@
+require "csv"
+require "json"
+
 module Curator
   module Tasks
-    # Shared rake-task implementation for `curator:retrievals:export` and
-    # `curator:evaluations:export`. Reads ENV-style args (`FORMAT`, `KB`,
-    # `SINCE`) and dispatches to the supplied exporter class. Filters
-    # are deliberately limited to the CLI subset spelled out in
-    # `features/m7-evaluations.md` — the full filter UI lives on the
-    # admin views.
-    #
-    # `KB` and `SINCE` are mapped onto the keys each exporter exposes
-    # via its `CLI_KB_KEY` / `CLI_SINCE_KEY` constants — retrievals call
-    # them `:kb_slug` / `:from`, evaluations call them `:kb` / `:since`,
-    # and the CLI accepts a single `KB=<slug>` / `SINCE=<iso8601>` shape
-    # either way. A future third exporter declares its own constants
-    # and is automatically supported here.
+    # Shared rake-task streaming for `curator:retrievals:export` and
+    # `curator:evaluations:export`. Dispatches to CSV or JSON based on
+    # the caller-supplied format, walks the ActiveRecord `scope` with
+    # `find_each`, and yields each record to the block for row shaping.
     module Export
       module_function
 
-      def run(exporter:, env:, io:)
-        format = env["FORMAT"].to_s.downcase
-        unless %w[csv json].include?(format)
-          abort "FORMAT is required and must be csv|json (got #{env['FORMAT'].inspect})"
+      # @param format [String] "csv" or "json"
+      # @param io [IO] destination stream (e.g. `$stdout`)
+      # @param scope [ActiveRecord::Relation]
+      # @param columns [Array<Symbol>] column keys for CSV header / row
+      #   ordering (ignored by JSON)
+      def run(format:, io:, scope:, columns:)
+        case format.to_s
+        when "csv"  then stream_csv(io, scope, columns) { |r| yield(r) }
+        when "json" then stream_json(io, scope)        { |r| yield(r) }
+        else
+          raise ArgumentError, "unknown format: #{format.inspect}"
         end
-
-        exporter.stream(io: io, format: format, filters: build_filters(exporter, env))
       end
 
-      def build_filters(exporter, env)
-        filters = {}
-        if (kb = env["KB"]) && !kb.empty?
-          filters[exporter::CLI_KB_KEY] = kb
+      def stream_csv(io, scope, columns)
+        io.write(CSV.generate_line(columns))
+        scope.find_each(order: :desc) do |row|
+          io.write(CSV.generate_line(columns.map { |col| yield(row)[col] }))
         end
-        if (since = env["SINCE"]) && !since.empty?
-          filters[exporter::CLI_SINCE_KEY] = since
-        end
-        filters
       end
+      private_class_method :stream_csv
+
+      def stream_json(io, scope)
+        io.write("[")
+        first = true
+        scope.find_each(order: :desc) do |row|
+          io.write(",") unless first
+          io.write(JSON.generate(yield(row).transform_keys(&:to_s)))
+          first = false
+        end
+        io.write("]")
+      end
+      private_class_method :stream_json
     end
   end
 end

@@ -1,11 +1,11 @@
 require "rails_helper"
 
-RSpec.describe Curator::Evaluator do
+RSpec.describe Curator::Evaluation, "create_or_update!" do
   let(:retrieval) { create(:curator_retrieval) }
 
-  describe ".call" do
+  describe ".create_or_update!" do
     it "persists a :positive evaluation with feedback and evaluator_id" do
-      evaluation = described_class.call(
+      evaluation = described_class.create_or_update!(
         retrieval:      retrieval,
         rating:         :positive,
         evaluator_role: :reviewer,
@@ -23,7 +23,7 @@ RSpec.describe Curator::Evaluator do
     end
 
     it "persists a :negative evaluation with categories + ideal answer" do
-      evaluation = described_class.call(
+      evaluation = described_class.create_or_update!(
         retrieval:          retrieval,
         rating:             :negative,
         evaluator_role:     :reviewer,
@@ -37,7 +37,7 @@ RSpec.describe Curator::Evaluator do
     end
 
     it "accepts an integer retrieval id and resolves it" do
-      evaluation = described_class.call(
+      evaluation = described_class.create_or_update!(
         retrieval:      retrieval.id,
         rating:         :positive,
         evaluator_role: :end_user
@@ -48,14 +48,14 @@ RSpec.describe Curator::Evaluator do
     end
 
     it "updates an existing row in place when evaluation_id is given" do
-      original = described_class.call(
+      original = described_class.create_or_update!(
         retrieval:      retrieval,
         rating:         :positive,
         evaluator_role: :reviewer,
         feedback:       "first take"
       )
 
-      updated = described_class.call(
+      updated = described_class.create_or_update!(
         retrieval:          retrieval,
         rating:             :negative,
         evaluator_role:     :reviewer,
@@ -73,14 +73,14 @@ RSpec.describe Curator::Evaluator do
 
     it "scopes evaluation_id lookup to the retrieval (cross-retrieval id raises)" do
       other_retrieval = create(:curator_retrieval)
-      stranger        = described_class.call(
+      stranger        = described_class.create_or_update!(
         retrieval:      other_retrieval,
         rating:         :positive,
         evaluator_role: :reviewer
       )
 
       expect {
-        described_class.call(
+        described_class.create_or_update!(
           retrieval:      retrieval,
           rating:         :negative,
           evaluator_role: :reviewer,
@@ -93,19 +93,19 @@ RSpec.describe Curator::Evaluator do
 
     it "raises ArgumentError on an unknown rating" do
       expect {
-        described_class.call(retrieval: retrieval, rating: :meh, evaluator_role: :reviewer)
+        described_class.create_or_update!(retrieval: retrieval, rating: :meh, evaluator_role: :reviewer)
       }.to raise_error(ArgumentError, /rating/)
     end
 
     it "raises ArgumentError on an unknown evaluator_role" do
       expect {
-        described_class.call(retrieval: retrieval, rating: :positive, evaluator_role: :robot)
+        described_class.create_or_update!(retrieval: retrieval, rating: :positive, evaluator_role: :robot)
       }.to raise_error(ArgumentError, /evaluator_role/)
     end
 
     it "raises RecordInvalid on an unknown failure_category" do
       expect {
-        described_class.call(
+        described_class.create_or_update!(
           retrieval:          retrieval,
           rating:             :negative,
           evaluator_role:     :reviewer,
@@ -116,7 +116,7 @@ RSpec.describe Curator::Evaluator do
 
     it "raises RecordInvalid when categories are passed on a :positive rating" do
       expect {
-        described_class.call(
+        described_class.create_or_update!(
           retrieval:          retrieval,
           rating:             :positive,
           evaluator_role:     :reviewer,
@@ -127,7 +127,7 @@ RSpec.describe Curator::Evaluator do
   end
 
   describe "Curator.evaluate delegator" do
-    it "delegates to Evaluator.call" do
+    it "delegates to Evaluation.create_or_update!" do
       evaluation = Curator.evaluate(
         retrieval:      retrieval,
         rating:         :positive,
